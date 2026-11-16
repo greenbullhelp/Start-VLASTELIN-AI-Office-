@@ -143,7 +143,7 @@ code{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--mut
 .online.ok{color:var(--green)}
 .bust-wrap{position:relative;height:220px;margin:-4px -6px 6px}
 .bust-rings{position:absolute;inset:0;width:100%;height:100%}
-#bust{position:absolute;inset:0;width:100%;height:100%;display:block}
+#bust{position:absolute;inset:0;width:100%;height:100%;display:block;-webkit-mask-image:linear-gradient(#000 72%,transparent 99%);mask-image:linear-gradient(#000 72%,transparent 99%)}
 .bust-fallback{position:absolute;inset:0;display:none;place-items:center}
 .bust-fallback svg{width:150px;height:150px}
 .no-webgl .bust-fallback{display:grid}
@@ -237,6 +237,31 @@ code{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--mut
 body.eco .spin,body.eco .wave i,body.eco .bars i{animation-play-state:paused}
 
 /* ===== АДАПТИВ ===== */
+/* ===== Збільшений аватар ===== */
+.bust-expand{position:absolute;right:4px;top:4px;z-index:2;width:30px;height:30px;border:1px solid rgba(63,184,255,.45);background:rgba(4,10,22,.6);font-size:16px;
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+.assistant.big{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,94vw);max-height:94vh;z-index:40;overflow:auto}
+.assistant.big .bust-wrap{height:min(56vh,520px)}
+.backdrop{position:fixed;inset:0;background:rgba(2,6,14,.7);backdrop-filter:blur(4px);z-index:35;display:none}
+.backdrop.show{display:block}
+.thinking{display:inline-flex;gap:4px;vertical-align:middle}
+.thinking i{width:6px;height:6px;border-radius:50%;background:var(--cyan-2);animation:th 1s infinite}
+.thinking i:nth-child(2){animation-delay:.15s}.thinking i:nth-child(3){animation-delay:.3s}
+@keyframes th{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+
+/* ===== Налаштування ===== */
+.modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:45;width:min(480px,94vw);padding:18px 20px;--c:18px}
+.modal[hidden]{display:none}
+.modal label{display:block;font-size:13px;color:var(--muted);margin:12px 0 0}
+.modal label input[type=url],.modal label input[type=password]{display:block;width:100%;margin-top:6px;background:rgba(3,8,18,.9);border:1px solid rgba(63,184,255,.4);color:var(--text);padding:10px 12px;font-size:14px;outline:none}
+.modal label input:focus{border-color:var(--cyan)}
+.modal .check{display:flex;align-items:center;gap:8px;color:var(--text)}
+.set-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.btn-gold{border:1px solid var(--gold);background:linear-gradient(180deg,rgba(232,183,90,.35),rgba(80,50,10,.5));padding:6px 16px;font-size:13px;font-weight:700;margin-left:auto;
+  clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+.set-note{font-size:12px;color:var(--muted);margin:14px 0 0;line-height:1.45}
+.set-note.ok{color:var(--green)}.set-note.bad{color:var(--red)}
+
 @media (max-width:1300px){
   .app{grid-template-columns:220px 1fr 310px}
   .mission{display:none}

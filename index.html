@@ -95,6 +95,7 @@
         </g>
       </svg>
       <canvas id="bust"></canvas>
+      <button class="bust-expand" id="bustExpand" aria-label="Збільшити аватар" title="Збільшити">⤢</button>
       <div class="bust-fallback" id="bustFallback"><svg><use href="#emblem"/></svg></div>
     </div>
     <div class="bubble" id="bubble"><b>Вітаю, <span class="uName">Djek</span>!</b><br>Готовий допомогти. Що робимо сьогодні?</div>
@@ -148,6 +149,8 @@
     </section>
   </aside>
 
+  <div class="backdrop" id="backdrop"></div>
+
   <!-- ===== ДОК ===== -->
   <footer class="dock">
     <button class="hud action gold" id="dVoice"><svg viewBox="0 0 24 24"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg>Голосова команда</button>
@@ -168,6 +171,24 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- ===== НАЛАШТУВАННЯ АГЕНТА ===== -->
+<div class="modal hud" id="settings" role="dialog" aria-modal="true" aria-labelledby="setTitle" hidden>
+  <div class="hud-head"><span id="setTitle"><b class="ico">⚙</b> НАЛАШТУВАННЯ AI-АГЕНТА</span><button class="icon-btn" id="setClose" aria-label="Закрити">×</button></div>
+  <label>Адреса сервера агента (Cloudflare Worker)
+    <input id="setUrl" type="url" placeholder="https://vlastelin-agent.ваш-нік.workers.dev" autocomplete="off">
+  </label>
+  <label>Код доступу
+    <input id="setCode" type="password" placeholder="той самий, що в ACCESS_CODE" autocomplete="off">
+  </label>
+  <label class="check"><input id="setVoice" type="checkbox"> Озвучувати відповіді голосом</label>
+  <div class="set-row">
+    <button class="btn-ghost" id="setTest">Перевірити зв'язок</button>
+    <button class="btn-ghost" id="setClear">Очистити розмову</button>
+    <button class="btn-gold" id="setSave">Зберегти</button>
+  </div>
+  <p class="set-note" id="setNote">Код доступу зберігається лише в цьому браузері. Ключ Claude API на сайт не потрапляє — він лежить на сервері агента.</p>
+</div>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@ const CONFIG = {
   city: "München",
   lat: 48.137, lon: 11.575,
   githubRepo: "greenbullhelp/Start-VLASTELIN-AI-Office-",
-  aiConnected: false, // стане true, коли підключимо AI-модель через сервер
+  agentUrl: "",       // адреса сервера агента; можна задати і в «Налаштуваннях» на сайті
   defaultProjects: [
     { name: "Транспортна компанія", progress: 64, icon: "◆" },
     { name: "Сайт нового покоління", progress: 82, icon: "◈" },
@@ -26,7 +26,75 @@ let toastTimer;
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2800); }
 
 let bustApi = null, officeApi = null;
-function say(html) { $("bubble").innerHTML = html; bustApi && bustApi.speak(); }
+function say(html, sec = 3) { $("bubble").innerHTML = html; bustApi && bustApi.speak(sec); }
+
+/* ====== AI-агент ====== */
+const agent = Object.assign({ url: CONFIG.agentUrl, code: "", voice: true }, store.get("vl_agent", {}));
+let history = store.get("vl_history", []);
+let aiOnline = false;
+const agentReady = () => /^https:\/\//.test(agent.url || "");
+
+function speakOut(text) {
+  if (!agent.voice || !("speechSynthesis" in window) || !text) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "uk-UA"; u.rate = 1.02; u.pitch = .9;
+    const v = speechSynthesis.getVoices().find(v => /^uk/i.test(v.lang));
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+function runAction(a) {
+  const i = a.input || {};
+  if (a.name === "create_project" && i.name) {
+    projects.push({ name: String(i.name).slice(0, 80), progress: Math.max(0, Math.min(100, i.progress | 0)), icon: "✦" });
+    renderProjects(); return `створено проєкт «${i.name}»`;
+  }
+  if (a.name === "update_project_progress" && i.name) {
+    const p = projects.find(p => p.name.toLowerCase() === String(i.name).toLowerCase())
+      || projects.find(p => p.name.toLowerCase().includes(String(i.name).toLowerCase()));
+    if (!p) return `проєкт «${i.name}» не знайдено`;
+    p.progress = Math.max(0, Math.min(100, i.progress | 0)); renderProjects(); return `прогрес «${p.name}» → ${p.progress}%`;
+  }
+  if (a.name === "add_event" && i.title) {
+    const t = /^\d{1,2}:\d{2}$/.test(i.time || "") ? i.time.padStart(5, "0") : "12:00";
+    events.push({ t, title: String(i.title).slice(0, 80) }); renderEvents(); return `подію ${t} «${i.title}» додано`;
+  }
+  return null;
+}
+
+async function askAgent(text) {
+  history.push({ role: "user", content: text });
+  history = history.slice(-20);
+  say(`<span class="thinking"><i></i><i></i><i></i></span> <span class="muted">Думаю…</span>`, 0);
+  bustApi && bustApi.think(true);
+  try {
+    const ctx = { user: CONFIG.userName, city: CONFIG.city, now: new Date().toLocaleString("uk-UA"), projects, events };
+    const r = await fetch(agent.url.replace(/\/+$/, "") + "/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Access-Code": agent.code || "" },
+      body: JSON.stringify({ messages: history, context: ctx })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Помилка ${r.status}`);
+    const done = (j.actions || []).map(runAction).filter(Boolean);
+    let reply = (j.reply || "").trim();
+    if (!reply) reply = done.length ? "Готово: " + done.join("; ") + "." : "Готово.";
+    history.push({ role: "assistant", content: reply + (done.length ? `\n[виконано: ${done.join("; ")}]` : "") });
+    store.set("vl_history", history.slice(-20));
+    say(esc(reply).replace(/\n/g, "<br>") + (done.length ? `<br><span class="muted">✓ ${esc(done.join("; "))}</span>` : ""), Math.min(8, reply.length / 15));
+    speakOut(reply);
+    setAiState(true);
+  } catch (e) {
+    history.pop();
+    say(`<b>Агент недоступний.</b><br><span class="muted">${esc(e.message || "Немає зв'язку")}. Перевірте «Налаштування».</span>`);
+    setAiState(false);
+  } finally {
+    bustApi && bustApi.think(false);
+  }
+}
 
 /* ====== 3D ====== */
 async function boot3D() {
@@ -82,6 +150,7 @@ $("menu").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   document.querySelectorAll(".menu button").forEach(x => x.classList.remove("active"));
   b.classList.add("active");
+  if (b.dataset.s === "Налаштування") { openSettings(); return; }
   say(`<b>Розділ «${esc(b.dataset.s)}»</b><br>Відкрито. Наповнення цього розділу — наступний етап.`);
 });
 
@@ -144,6 +213,7 @@ $("finBtn").onclick = () => say(`<b>Фінанси</b><br>Зараз це дем
 
 /* ====== команди асистента ====== */
 function handleCommand(text) {
+  if (agentReady()) { askAgent(text); return; }
   const t = text.toLowerCase();
   if (/проєкт|проект/.test(t) && /(створ|додай|новий)/.test(t)) {
     const name = text.replace(/.*(проєкт|проект)\s*/i, "").trim();
@@ -152,9 +222,7 @@ function handleCommand(text) {
   if (/час|котра/.test(t)) { say(`<b>Зараз ${$("time").textContent}</b>`); return; }
   if (/погода/.test(t)) { say(`<b>${esc(CONFIG.city)}:</b> ${$("wTemp").textContent} ${$("wIcon").textContent}`); return; }
   if (/звіт/.test(t)) { makeReport(); return; }
-  if (!CONFIG.aiConnected) {
-    say(`<b>Команду прийнято:</b> «${esc(text)}»<br><span class="muted">Для розумних відповідей потрібно підключити AI-модель. Поки я розумію: «створи проєкт …», «котра година», «погода», «звіт».</span>`);
-  }
+  say(`<b>Команду прийнято:</b> «${esc(text)}»<br><span class="muted">AI-агент ще не підключений (Налаштування). Поки я розумію: «створи проєкт …», «котра година», «погода», «звіт».</span>`);
 }
 function sendCmd() { const v = $("cmdInput").value.trim(); if (!v) return; $("cmdInput").value = ""; handleCommand(v); }
 $("cmdSend").onclick = sendCmd;
@@ -207,23 +275,70 @@ $("modeBtn").onclick = () => {
 };
 
 /* ====== статус системи (реальні перевірки) ====== */
-const setDot = (id, s) => { $(id).className = "dot " + s; };
+const setDot = (id, st) => { $(id).className = "dot " + st; };
+let netOk = navigator.onLine, gitOk = false;
+function setAiState(ok) {
+  aiOnline = ok;
+  setDot("sAi", ok ? "ok" : agentReady() ? "bad" : "warn");
+  $("sAiTxt").textContent = ok ? "· онлайн" : agentReady() ? "· немає зв'язку" : "· не налаштована";
+  setDot("aiDot", ok ? "ok" : "warn"); $("aiState").textContent = ok ? "Онлайн" : "Базовий режим";
+  $("aiState").parentElement.classList.toggle("ok", ok);
+  const all = netOk && gitOk && ok;
+  setDot("sAll", all ? "ok" : netOk ? "warn" : "bad");
+  $("sAllTxt").textContent = all ? "Усі системи ОК" : netOk ? "Частково активна" : "Є проблеми";
+  setDot("miniDot", all ? "ok" : netOk ? "warn" : "bad");
+  $("miniTitle").textContent = netOk ? "Система активна" : "Немає зв'язку";
+  $("miniSub").textContent = all ? "Усі сервіси в мережі" : !netOk ? "Перевірте інтернет" : !gitOk ? "GitHub недоступний" : "AI-агент не підключений";
+}
+async function pingAgent() {
+  if (!agentReady()) return { ok: false, msg: "Адресу сервера не задано" };
+  try {
+    const r = await fetch(agent.url.replace(/\/+$/, "") + "/health");
+    const j = await r.json();
+    if (!j.ok) return { ok: false, msg: "Сервер відповів з помилкою" };
+    if (!j.configured) return { ok: false, msg: "На сервері не задано ANTHROPIC_API_KEY" };
+    return { ok: true, msg: `Зв'язок є · модель ${j.model}${j.protected ? " · захищено кодом" : " · без коду доступу!"}` };
+  } catch (e) { return { ok: false, msg: "Сервер не відповідає — перевірте адресу" }; }
+}
 async function checkStatus() {
-  const net = navigator.onLine; setDot("sNet", net ? "ok" : "bad");
-  let git = false;
-  try { git = (await fetch(`https://api.github.com/repos/${CONFIG.githubRepo}`)).ok; } catch (e) {}
-  setDot("sGit", git ? "ok" : "bad");
-  const ai = CONFIG.aiConnected;
-  setDot("sAi", ai ? "ok" : "warn"); $("sAiTxt").textContent = ai ? "· онлайн" : "· очікує";
-  setDot("aiDot", ai ? "ok" : "warn"); $("aiState").textContent = ai ? "Онлайн" : "Базовий режим";
-  $("aiState").parentElement.classList.toggle("ok", ai);
-  const all = net && git && ai;
-  setDot("sAll", all ? "ok" : net ? "warn" : "bad");
-  $("sAllTxt").textContent = all ? "Усі системи ОК" : net ? "Частково активна" : "Є проблеми";
-  setDot("miniDot", all ? "ok" : net ? "warn" : "bad");
-  $("miniTitle").textContent = net ? "Система активна" : "Немає зв'язку";
-  $("miniSub").textContent = all ? "Усі сервіси в мережі" : net ? (git ? "AI-модель очікує підключення" : "GitHub недоступний") : "Перевірте інтернет";
+  netOk = navigator.onLine; setDot("sNet", netOk ? "ok" : "bad");
+  try { gitOk = (await fetch(`https://api.github.com/repos/${CONFIG.githubRepo}`)).ok; } catch (e) { gitOk = false; }
+  setDot("sGit", gitOk ? "ok" : "bad");
+  setAiState((await pingAgent()).ok);
 }
 checkStatus();
 addEventListener("online", checkStatus);
 addEventListener("offline", checkStatus);
+
+/* ====== збільшений аватар ====== */
+function toggleBig(v) {
+  const big = v ?? !$("assistant").classList.contains("big");
+  $("assistant").classList.toggle("big", big); $("backdrop").classList.toggle("show", big);
+  $("bustExpand").textContent = big ? "×" : "⤢";
+  bustApi && bustApi.setBig(big);
+}
+$("bustExpand").onclick = () => toggleBig();
+$("backdrop").onclick = () => { toggleBig(false); closeSettings(); };
+addEventListener("keydown", e => { if (e.key === "Escape") { toggleBig(false); closeSettings(); } });
+
+/* ====== налаштування агента ====== */
+function openSettings() {
+  $("setUrl").value = agent.url || ""; $("setCode").value = agent.code || ""; $("setVoice").checked = !!agent.voice;
+  $("setNote").className = "set-note"; $("setNote").textContent = "Код доступу зберігається лише в цьому браузері. Ключ Claude API на сайт не потрапляє — він лежить на сервері агента.";
+  $("settings").hidden = false; $("backdrop").classList.add("show"); $("setUrl").focus();
+}
+function closeSettings() { $("settings").hidden = true; if (!$("assistant").classList.contains("big")) $("backdrop").classList.remove("show"); }
+function readSettings() { agent.url = $("setUrl").value.trim(); agent.code = $("setCode").value; agent.voice = $("setVoice").checked; }
+$("setClose").onclick = closeSettings;
+$("setTest").onclick = async () => {
+  readSettings(); $("setNote").className = "set-note"; $("setNote").textContent = "Перевіряю…";
+  const r = await pingAgent(); $("setNote").className = "set-note " + (r.ok ? "ok" : "bad"); $("setNote").textContent = r.msg;
+};
+$("setClear").onclick = () => { history = []; store.set("vl_history", []); toast("Розмову очищено"); };
+$("setSave").onclick = async () => {
+  readSettings();
+  if (agent.url && !agentReady()) { $("setNote").className = "set-note bad"; $("setNote").textContent = "Адреса має починатися з https://"; return; }
+  store.set("vl_agent", agent); closeSettings(); toast("Налаштування збережено");
+  const r = await pingAgent(); setAiState(r.ok);
+  say(r.ok ? `<b>AI-агент підключений.</b><br>Чим можу допомогти?` : `<b>Налаштування збережено.</b><br><span class="muted">${esc(r.msg)}</span>`);
+};

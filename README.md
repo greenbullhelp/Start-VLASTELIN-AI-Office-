@@ -1,2 +1,12 @@
-# Start-VLASTELIN-AI-Office-
-Personal AI Virtual Office — JARVIS-inspired assistant with voice control, futuristic dashboard and business automation.
+# VLASTELIN — AI Virtual Office
+
+Персональний командний центр з 3D-сценою (Three.js): панорамний офіс, нічне місто, реалістична планета, голографічне місто і сріблястий AI-асистент.
+
+- `index.html` — розмітка
+- `css/style.css` — HUD-стиль панелей
+- `js/app.js` — логіка інтерфейсу (налаштування в блоці `CONFIG`)
+- `js/office3d.js` — 3D-сцена офісу
+- `js/assistant3d.js` — 3D-асистент
+- `vendor/three/` — Three.js r160 (MIT, локальна копія — сайт не залежить від CDN)
+
+Кнопка «РЕЖИМ: MAX/ECO» вмикає полегшену графіку для слабких пристроїв.

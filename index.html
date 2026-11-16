@@ -3,381 +3,770 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#080b12">
-<title>STARK AI OFFICE</title>
+<meta name="theme-color" content="#050912">
+<title>VLASTELIN — AI Virtual Office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root {
-  --black: #080b12;
-  --panel: rgba(15, 23, 37, .92);
-  --blue: #20baff;
-  --gold: #d8b15e;
-  --coffee: #35251f;
-  --white: #eaf2ff;
+:root{
+  --bg:#050912;
+  --glass:rgba(10,22,40,.72);
+  --glass-2:rgba(14,30,54,.82);
+  --line:rgba(64,170,255,.35);
+  --line-strong:rgba(90,190,255,.75);
+  --cyan:#3fb8ff;
+  --cyan-2:#7fd6ff;
+  --gold:#e8b75a;
+  --gold-2:#ffd88a;
+  --green:#3ee08f;
+  --amber:#ffb547;
+  --red:#ff5d6c;
+  --text:#e9f3ff;
+  --muted:#8ea7c4;
+  --radius:16px;
 }
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  min-height: 100vh;
-  background: var(--black);
-  color: var(--white);
-  font-family: Arial, sans-serif;
-}
-header {
-  padding: 20px;
-  display: flex;
-  justify-content: space-between;
-  border-bottom: 1px solid #26384b;
-  background: #090e18;
-}
-.logo {
-  color: var(--gold);
-  letter-spacing: 3px;
-  font-weight: bold;
-}
-.status {
-  color: #43dda0;
-  font-size: 12px;
-}
-.layout {
-  display: grid;
-  grid-template-columns: 210px 1fr 250px;
-  gap: 15px;
-  padding: 15px;
-  min-height: calc(100vh - 100px);
-}
-.panel {
-  background: var(--panel);
-  border: 1px solid #283d54;
-  border-radius: 14px;
-  padding: 17px;
-}
-h2 {
-  color: var(--gold);
-  font-size: 13px;
-  letter-spacing: 2px;
-}
-.menu button {
-  display: block;
-  width: 100%;
-  padding: 13px;
-  margin: 8px 0;
-  background: #111e30;
-  border: 1px solid #25384c;
-  border-radius: 8px;
-  color: white;
-  text-align: left;
-  cursor: pointer;
-}
-.menu button:hover {
-  border-color: var(--blue);
-  color: var(--blue);
-}
-.office {
-  position: relative;
-  min-height: 590px;
-  overflow: hidden;
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  font-family:"Exo 2",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:var(--text);
   background:
-    radial-gradient(ellipse at 50% 60%, #173b5a, transparent 55%),
-    linear-gradient(160deg, #101b2b, #080b12 75%);
+    radial-gradient(1200px 600px at 50% 70%,rgba(30,90,170,.35),transparent 60%),
+    radial-gradient(900px 500px at 50% 0%,rgba(232,183,90,.08),transparent 70%),
+    linear-gradient(180deg,#040811 0%,#07101f 55%,#050912 100%);
+  min-height:100vh;
+  overflow-x:hidden;
 }
-.planet {
-  position: absolute;
-  width: 125px;
-  height: 125px;
-  top: 55px;
-  left: 50%;
-  transform: translateX(-50%);
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at 35% 30%,
-    #fff1ca,
-    #d4b66c 30%,
-    #315a80 65%,
-    #101a2b 85%
-  );
-  box-shadow: 0 0 35px #218fc9, 0 0 80px #164e79;
-  animation: orbit 18s linear infinite;
+button{font-family:inherit;color:inherit;cursor:pointer}
+input{font-family:inherit}
+.app{
+  display:grid;
+  grid-template-columns:240px 1fr 340px;
+  grid-template-rows:auto 1fr auto;
+  grid-template-areas:
+    "top top top"
+    "nav stage side"
+    "dock dock dock";
+  gap:14px;
+  padding:14px;
+  min-height:100vh;
+  max-width:1600px;
+  margin:0 auto;
 }
-.planet::after {
-  content: "";
-  position: absolute;
-  width: 175px;
-  height: 45px;
-  top: 40px;
-  left: -25px;
-  border: 2px solid rgba(216,177,94,.8);
-  border-radius: 50%;
-  transform: rotate(-20deg);
+.glass{
+  background:var(--glass);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  box-shadow:0 0 0 1px rgba(63,184,255,.06) inset,0 0 24px rgba(63,184,255,.12),0 10px 40px rgba(0,0,0,.45);
+  position:relative;
 }
-@keyframes orbit {
-  from { rotate: 0deg; }
-  to { rotate: 360deg; }
+.glass::before{ /* corner accents */
+  content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;
+  background:
+    linear-gradient(var(--cyan),var(--cyan)) top left/18px 2px no-repeat,
+    linear-gradient(var(--cyan),var(--cyan)) top left/2px 18px no-repeat,
+    linear-gradient(var(--cyan),var(--cyan)) bottom right/18px 2px no-repeat,
+    linear-gradient(var(--cyan),var(--cyan)) bottom right/2px 18px no-repeat;
+  opacity:.8;
 }
-.city-label {
-  position: absolute;
-  top: 195px;
-  width: 100%;
-  text-align: center;
-  color: var(--gold);
-  letter-spacing: 4px;
-  font-size: 12px;
+.panel-title{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:14px;
 }
-.skyline {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 42%;
-  display: flex;
-  align-items: end;
-  justify-content: space-around;
+.panel-title .ico{color:var(--gold);margin-right:8px}
+.muted{color:var(--muted)}
+
+/* ===== TOP BAR ===== */
+.topbar{grid-area:top;display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:stretch}
+.brand{display:flex;align-items:center;gap:14px;padding:10px 20px 10px 12px}
+.emblem{width:62px;height:62px;flex:none}
+.brand h1{
+  margin:0;font-size:30px;font-weight:800;letter-spacing:.08em;line-height:1;
+  background:linear-gradient(180deg,var(--gold-2),var(--gold) 60%,#a9792c);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
 }
-.building {
-  width: 10%;
-  background: linear-gradient(#183c5b, #09111e);
-  border: 1px solid #2876a3;
-  box-shadow: 0 0 12px #0876a9;
+.brand small{display:block;margin-top:5px;font-size:11px;letter-spacing:.22em;color:var(--gold);opacity:.85}
+.mission{align-self:center;justify-self:center;text-align:center;padding:10px 34px;border-radius:14px}
+.mission b{display:block;letter-spacing:.14em;font-size:15px}
+.mission span{font-size:11px;letter-spacing:.18em;color:var(--muted)}
+.topright{display:flex;gap:14px}
+.clock{display:flex;align-items:center;gap:18px;padding:10px 20px}
+.clock .date{font-size:12px;color:var(--muted)}
+.clock .time{font-size:34px;font-weight:700;letter-spacing:.04em;line-height:1}
+.weather{display:flex;align-items:center;gap:10px;border-left:1px solid var(--line);padding-left:18px}
+.weather .wi{font-size:28px}
+.weather b{font-size:20px;display:block}
+.weather small{font-size:11px;color:var(--muted)}
+.user{display:flex;align-items:center;gap:12px;padding:10px 18px}
+.avatar-user{
+  width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:20px;
+  background:radial-gradient(circle at 35% 30%,#2a4f7d,#0b1a30);border:2px solid var(--gold);
+  box-shadow:0 0 14px rgba(232,183,90,.45);
 }
-.building:nth-child(1) { height: 55%; }
-.building:nth-child(2) { height: 80%; }
-.building:nth-child(3) { height: 65%; }
-.building:nth-child(4) { height: 100%; }
-.building:nth-child(5) { height: 72%; }
-.building:nth-child(6) { height: 90%; }
-.building:nth-child(7) { height: 50%; }
-.assistant {
-  position: absolute;
-  left: 20px;
-  top: 43%;
-  width: 115px;
-  text-align: center;
-  z-index: 2;
+.user b{display:block;color:var(--gold-2);font-size:16px}
+.user small{color:var(--muted);font-size:12px}
+
+/* ===== NAV ===== */
+.nav{grid-area:nav;display:flex;flex-direction:column;gap:12px}
+.menu{padding:12px;display:flex;flex-direction:column;gap:8px}
+.menu button{
+  display:flex;align-items:center;gap:12px;width:100%;
+  padding:12px 14px;border-radius:10px;font-size:15px;font-weight:500;text-align:left;
+  background:rgba(12,28,52,.75);border:1px solid rgba(63,184,255,.18);
+  transition:.2s border-color,.2s background,.2s transform;
 }
-.avatar {
-  width: 75px;
-  height: 95px;
-  margin: auto;
-  border-radius: 40% 40% 45% 45%;
-  background: linear-gradient(
-    120deg,
-    #ffffff,
-    #9eafbf,
-    #e8f5ff,
-    #52677d
-  );
-  box-shadow: 0 0 20px var(--blue);
-  clip-path: polygon(
-    25% 0, 75% 0, 100% 35%,
-    85% 85%, 50% 100%, 15% 85%, 0 35%
-  );
+.menu button svg{width:20px;height:20px;flex:none;stroke:var(--cyan);fill:none;stroke-width:1.8}
+.menu button:hover{border-color:var(--line-strong);transform:translateX(3px)}
+.menu button.active{
+  background:linear-gradient(90deg,rgba(232,183,90,.28),rgba(232,183,90,.06));
+  border-color:var(--gold);box-shadow:0 0 16px rgba(232,183,90,.35);
+  clip-path:polygon(0 0,92% 0,100% 50%,92% 100%,0 100%);
 }
-.assistant small {
-  display: block;
-  color: var(--blue);
-  margin-top: 10px;
-  font-size: 10px;
+.menu button.active svg{stroke:var(--gold-2)}
+.sys-mini{padding:14px 16px;display:flex;gap:12px;align-items:center;font-size:13px}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--muted)}
+.dot.ok{background:var(--green);box-shadow:0 0 10px var(--green)}
+.dot.warn{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+.dot.bad{background:var(--red);box-shadow:0 0 10px var(--red)}
+
+/* ===== STAGE ===== */
+.stage{grid-area:stage;position:relative;min-height:560px;border-radius:var(--radius);overflow:hidden;
+  border:1px solid rgba(63,184,255,.15)}
+.scene{position:absolute;inset:0;width:100%;height:100%}
+.assistant{position:absolute;left:16px;top:16px;width:330px;padding:16px;z-index:3}
+.assistant .head{display:flex;align-items:center;justify-content:space-between}
+.online{font-size:12px;color:var(--green);display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0}
+.core{display:block;width:150px;height:150px;margin:6px auto 4px}
+.bubble{
+  background:var(--glass-2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+  font-size:15px;line-height:1.4;min-height:70px;
 }
-.center-content {
-  position: relative;
-  z-index: 1;
-  text-align: center;
-  padding-top: 240px;
+.bubble b{color:var(--cyan-2)}
+.cmd{display:flex;gap:8px;margin-top:10px}
+.cmd input{
+  flex:1;min-width:0;background:rgba(4,10,20,.8);border:1px solid var(--line);border-radius:10px;
+  color:var(--text);padding:10px 12px;font-size:14px;outline:none;
 }
-.center-content h1 {
-  color: var(--gold);
-  letter-spacing: 4px;
-  font-size: 23px;
+.cmd input:focus{border-color:var(--cyan)}
+.cmd button{border:1px solid var(--line);background:rgba(63,184,255,.15);border-radius:10px;padding:0 12px}
+.voicebar{display:flex;align-items:center;gap:10px;margin-top:10px}
+.wave{flex:1;height:34px;display:flex;align-items:center;gap:3px;overflow:hidden}
+.wave i{display:block;flex:1;background:var(--cyan);border-radius:2px;height:20%;opacity:.8;
+  animation:wv 1.2s ease-in-out infinite}
+.wave.live i{background:var(--gold);animation-duration:.5s}
+@keyframes wv{0%,100%{height:15%}50%{height:90%}}
+.mic{
+  width:48px;height:48px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:radial-gradient(circle,#123a66,#081a30);border:2px solid var(--cyan);
+  box-shadow:0 0 16px rgba(63,184,255,.6);
 }
-.center-content p {
-  color: #a7c8e4;
-  font-size: 13px;
+.mic svg{width:22px;height:22px;stroke:var(--cyan-2);fill:none;stroke-width:2}
+.mic.live{border-color:var(--gold);box-shadow:0 0 22px var(--gold)}
+.mic.live svg{stroke:var(--gold-2)}
+
+/* ===== SIDE ===== */
+.side{grid-area:side;display:flex;flex-direction:column;gap:12px}
+.card{padding:14px 16px}
+.badge-add{display:flex;align-items:center;gap:10px;font-size:13px;letter-spacing:0;text-transform:none;font-weight:500}
+.icon-btn{width:28px;height:28px;border-radius:8px;border:1px solid var(--line);background:rgba(63,184,255,.12);font-size:18px;line-height:1}
+.plist{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.plist li{display:flex;align-items:center;gap:10px;font-size:14px;padding:6px 4px;border-bottom:1px solid rgba(63,184,255,.08)}
+.plist li::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold);flex:none}
+.plist li span{flex:1}
+.plist li button{background:none;border:none;color:var(--muted);font-size:15px;padding:0 4px}
+.plist li button:hover{color:var(--red)}
+.addrow{display:none;gap:6px;margin-top:10px}
+.addrow.show{display:flex}
+.addrow input{flex:1;min-width:0;background:rgba(4,10,20,.8);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:8px 10px}
+.addrow button{border:1px solid var(--gold);background:rgba(232,183,90,.15);border-radius:8px;padding:0 10px}
+.fin{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;margin-top:10px}
+.coins{width:60px;height:60px}
+.fin small{color:var(--muted);font-size:12px}
+.fin .bal{font-size:28px;font-weight:800;color:var(--gold-2)}
+.fin .chg{color:var(--green);font-size:13px}
+.spark{width:100%;height:60px;display:block;margin-top:6px}
+.btn-ghost{border:1px solid var(--line);background:rgba(63,184,255,.08);border-radius:8px;padding:6px 12px;font-size:13px}
+.cal{display:grid;grid-template-columns:90px 1fr;gap:14px;margin-top:12px}
+.daybox{border:1px solid var(--line);border-radius:12px;display:grid;place-items:center;text-align:center;padding:10px 0;background:var(--glass-2)}
+.daybox b{font-size:40px;line-height:1}
+.daybox span{color:var(--muted);font-size:14px}
+.events{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.events li{display:flex;gap:10px;align-items:center}
+.events time{color:var(--cyan-2);font-weight:600;min-width:44px}
+.events li span{flex:1}
+.events li button{background:none;border:none;color:var(--muted)}
+.events li button:hover{color:var(--red)}
+.empty{color:var(--muted);font-size:13px}
+
+/* ===== DOCK ===== */
+.dock{grid-area:dock;display:grid;grid-template-columns:repeat(3,1fr) 140px repeat(3,1fr) 220px;gap:12px;align-items:stretch}
+.action{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+  padding:14px 8px;font-size:14px;font-weight:600;text-align:center;
+  border-radius:14px;transition:.2s transform,.2s border-color;
 }
-.voice {
-  background: linear-gradient(100deg, #087cb7, #c49a48);
-  color: white;
-  border: none;
-  padding: 13px 25px;
-  border-radius: 25px;
-  cursor: pointer;
-  margin: 10px;
+.action svg{width:30px;height:30px;stroke:var(--cyan);fill:none;stroke-width:1.8}
+.action:hover{transform:translateY(-3px);border-color:var(--line-strong)}
+.action.gold{border-color:var(--gold);box-shadow:0 0 18px rgba(232,183,90,.3)}
+.action.gold svg{stroke:var(--gold-2)}
+.mode{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:none;border:none}
+.mode .emblem{width:84px;height:84px}
+.mode span{font-size:12px;letter-spacing:.14em;color:var(--muted)}
+.mode b{color:var(--gold-2)}
+.status{padding:12px 16px;font-size:13px}
+.status h4{margin:0 0 8px;font-size:12px;letter-spacing:.14em;color:var(--muted);font-weight:600}
+.status div{display:flex;align-items:center;gap:8px;margin:5px 0}
+
+/* ECO mode = calmer animations */
+body.eco .spin,body.eco .wave i{animation-play-state:paused!important}
+body.eco svg animate,body.eco svg animateTransform{display:none}
+
+.toast{
+  position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(120px);
+  background:var(--glass-2);border:1px solid var(--gold);border-radius:12px;padding:12px 18px;
+  font-size:14px;z-index:20;transition:.35s transform;max-width:90vw;
 }
-input {
-  width: 100%;
-  background: #090f19;
-  border: 1px solid #31506c;
-  padding: 13px;
-  color: white;
-  border-radius: 8px;
-  margin-top: 12px;
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{transform-box:fill-box;transform-origin:center;animation:spin 18s linear infinite}
+.spin.rev{animation-direction:reverse;animation-duration:26s}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width:1250px){
+  .app{grid-template-columns:210px 1fr 300px}
+  .mission{display:none}
+  .topbar{grid-template-columns:auto 1fr}
+  .topright{justify-self:end}
+  .dock{grid-template-columns:repeat(4,1fr)}
+  .mode{grid-column:span 1}
+  .status{grid-column:span 4}
 }
-.task {
-  padding: 12px;
-  margin: 10px 0;
-  background: #182536;
-  border-left: 3px solid var(--gold);
-  border-radius: 5px;
-  font-size: 12px;
+@media (max-width:900px){
+  .app{grid-template-columns:1fr;grid-template-areas:"top" "stage" "nav" "side" "dock"}
+  .topbar{grid-template-columns:1fr}
+  .topright{justify-self:stretch;flex-wrap:wrap}
+  .clock,.user{flex:1}
+  .menu{display:grid;grid-template-columns:1fr 1fr}
+  .menu button.active{clip-path:none}
+  .stage{min-height:auto;padding:12px}
+  .scene{position:absolute;opacity:.55}
+  .assistant{position:relative;left:auto;top:auto;width:auto}
+  .dock{grid-template-columns:repeat(3,1fr)}
+  .mode{grid-column:span 3}
+  .status{grid-column:span 3}
 }
-footer {
-  padding: 15px;
-  text-align: center;
-  color: #75869b;
-  font-size: 10px;
-}
-@media(max-width:850px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
-  .office {
-    min-height: 520px;
-  }
-  .assistant {
-    left: 8px;
-    transform: scale(.8);
-    transform-origin: top left;
-  }
-  .planet {
-    width: 90px;
-    height: 90px;
-  }
-  .city-label {
-    top: 170px;
-  }
-  .center-content {
-    padding-top: 220px;
-  }
-  .menu {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 5px;
-  }
+@media (prefers-reduced-motion:reduce){
+  .spin,.wave i{animation:none}
 }
 </style>
 </head>
 <body>
-<header>
-  <div class="logo">STARK AI OFFICE</div>
-  <div class="status">● SYSTEM ONLINE</div>
-</header>
 
-<div class="layout">
-  <aside class="panel">
-    <h2>НАВІГАЦІЯ</h2>
-    <div class="menu">
-      <button onclick="show('Головна')">⌂ Головна</button>
-      <button onclick="show('Бізнес-центр')">◈ Бізнес</button>
-      <button onclick="show('Розробка')">⌘ Розробка</button>
-      <button onclick="show('Медіацентр')">▶ Медіа</button>
-      <button onclick="show('Фінанси')">€ Фінанси</button>
-      <button onclick="show('Аналітика')">◉ Аналітика</button>
-      <button onclick="show('Комунікації')">✉ Комунікації</button>
+<!-- Reusable original emblem: hexagonal core -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".35" stop-color="#8fe0ff"/>
+      <stop offset=".7" stop-color="#1f8fe0" stop-opacity=".6"/>
+      <stop offset="1" stop-color="#0a2a50" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe2a0"/><stop offset="1" stop-color="#b8832f"/>
+    </linearGradient>
+    <symbol id="emblem" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="47" fill="#06142a" stroke="#3fb8ff" stroke-width="2"/>
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#3fb8ff" stroke-opacity=".45" stroke-width="1" stroke-dasharray="3 4" class="spin"/>
+      <polygon points="50,18 77,34 77,66 50,82 23,66 23,34" fill="none" stroke="url(#goldGrad)" stroke-width="3"/>
+      <polygon points="50,30 66,40 66,60 50,70 34,60 34,40" fill="none" stroke="#7fd6ff" stroke-width="1.5"/>
+      <circle cx="50" cy="50" r="12" fill="url(#coreGlow)"/>
+      <path d="M50 30v8M66 40l-7 4M66 60l-7-4M50 70v-8M34 60l7-4M34 40l7 4" stroke="#7fd6ff" stroke-width="1.5"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="app">
+
+  <!-- ===== TOP ===== -->
+  <header class="topbar">
+    <div class="brand glass">
+      <svg class="emblem"><use href="#emblem"/></svg>
+      <div>
+        <h1>VLASTELIN</h1>
+        <small>ВАШ AI ВІРТУАЛЬНИЙ ОФІС</small>
+      </div>
     </div>
-  </aside>
-
-  <main class="panel office">
-    <div class="planet"></div>
-    <div class="city-label">DIGITAL CITY · FUTURE NETWORK</div>
-
-    <div class="skyline">
-      <div class="building"></div>
-      <div class="building"></div>
-      <div class="building"></div>
-      <div class="building"></div>
-      <div class="building"></div>
-      <div class="building"></div>
-      <div class="building"></div>
+    <div class="mission glass">
+      <b>MISSION: BUILD BIGGER</b>
+      <span>DREAM. PLAN. ACHIEVE.</span>
     </div>
-
-    <div class="assistant">
-      <div class="avatar"></div>
-      <small>STARK AI</small>
-      <small>YOUR ASSISTANT</small>
+    <div class="topright">
+      <div class="clock glass">
+        <div>
+          <div class="date" id="date">—</div>
+          <div class="time" id="time">--:--</div>
+        </div>
+        <div class="weather">
+          <div class="wi" id="wIcon">⛅</div>
+          <div><b id="wTemp">--°C</b><small id="wCity">München</small></div>
+        </div>
+      </div>
+      <div class="user glass">
+        <div class="avatar-user" id="uInitial">D</div>
+        <div><b id="uName">Djek</b><small id="uRole">CEO</small></div>
+      </div>
     </div>
+  </header>
 
-    <div class="center-content">
-      <h1>STARK AI</h1>
-      <p id="response">Вітаю, керівнику. Система готова до роботи.</p>
-
-      <button class="voice" onclick="listen()">
-        🎙 ГОЛОСОВА КОМАНДА
-      </button>
-
-      <input
-        id="command"
-        placeholder="Введи свою команду..."
-        onkeydown="if(event.key==='Enter')send()"
-      >
-
-      <button class="voice" onclick="send()">ВІДПРАВИТИ</button>
+  <!-- ===== NAV ===== -->
+  <nav class="nav">
+    <div class="menu glass" id="menu">
+      <button class="active" data-s="Головна"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8M5 9.5V21h5v-6h4v6h5V9.5"/></svg>Головна</button>
+      <button data-s="Бізнес-центр"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Бізнес-центр</button>
+      <button data-s="Проєкти"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V4h8v3M3 12h18"/></svg>Проєкти</button>
+      <button data-s="Фінанси"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Фінанси</button>
+      <button data-s="Розробка"><svg viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>Розробка</button>
+      <button data-s="Медіацентр"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>Медіацентр</button>
+      <button data-s="Комунікації"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.3-5.5 6.5-5.5s5.9 2 6.5 5.5M16 4.8a3.5 3.5 0 010 6.4M18 14.8c1.9.8 3.1 2.6 3.5 5.2"/></svg>Комунікації</button>
+      <button data-s="Аналітика"><svg viewBox="0 0 24 24"><path d="M3 20h18M4 16l5-5 4 3 7-8"/></svg>Аналітика</button>
+      <button data-s="Налаштування"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>Налаштування</button>
     </div>
+    <div class="sys-mini glass">
+      <span class="dot" id="miniDot"></span>
+      <div><b id="miniTitle">Перевірка…</b><br><small class="muted" id="miniSub">Сервіси перевіряються</small></div>
+    </div>
+  </nav>
+
+  <!-- ===== STAGE ===== -->
+  <main class="stage" id="stage">
+    <svg class="scene" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#040a18"/><stop offset=".6" stop-color="#0b1d3a"/><stop offset="1" stop-color="#132c52"/>
+        </linearGradient>
+        <radialGradient id="globeFill" cx="40%" cy="35%" r="65%">
+          <stop offset="0" stop-color="#6fd0ff" stop-opacity=".55"/>
+          <stop offset=".6" stop-color="#1667b8" stop-opacity=".35"/>
+          <stop offset="1" stop-color="#06204a" stop-opacity=".25"/>
+        </radialGradient>
+        <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+          <stop offset=".55" stop-color="#3fb8ff" stop-opacity=".35"/><stop offset="1" stop-color="#3fb8ff" stop-opacity="0"/>
+        </radialGradient>
+        <radialGradient id="platform" cx="50%" cy="50%" r="50%">
+          <stop offset="0" stop-color="#7fd6ff" stop-opacity=".55"/><stop offset="1" stop-color="#0a3a70" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#7fd6ff" stop-opacity="0"/><stop offset="1" stop-color="#7fd6ff" stop-opacity=".45"/>
+        </linearGradient>
+        <linearGradient id="tower" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#9ee6ff"/><stop offset="1" stop-color="#1d6fc0" stop-opacity=".5"/>
+        </linearGradient>
+        <pattern id="dots" width="14" height="10" patternUnits="userSpaceOnUse">
+          <circle cx="3" cy="3" r="1.4" fill="#bdeeff"/>
+        </pattern>
+        <pattern id="windows" width="10" height="12" patternUnits="userSpaceOnUse">
+          <rect x="2" y="3" width="3" height="4" fill="#ffd27a" opacity=".55"/>
+        </pattern>
+        <clipPath id="globeClip"><circle cx="500" cy="235" r="135"/></clipPath>
+        <g id="land">
+          <path d="M380 150c30-25 70-30 95-10s20 55-5 70-15 50-40 60-50-15-50-50z"/>
+          <path d="M520 130c40-20 90-15 110 10s0 45-25 55-30 40-60 35-45-40-40-70z"/>
+          <path d="M470 250c25-10 50 5 55 30s-10 60-30 70-35-20-35-50z"/>
+          <path d="M640 200c25-15 55-5 60 20s-20 40-45 40-35-35-15-60z"/>
+          <path d="M700 290c20-5 40 10 35 30s-30 25-45 10-5-35 10-40z"/>
+        </g>
+      </defs>
+
+      <rect width="1000" height="620" fill="url(#sky)"/>
+      <!-- stars -->
+      <g fill="#cfe9ff" opacity=".7">
+        <circle cx="80" cy="40" r="1"/><circle cx="210" cy="90" r="1.2"/><circle cx="330" cy="30" r=".8"/>
+        <circle cx="690" cy="60" r="1"/><circle cx="820" cy="35" r="1.3"/><circle cx="930" cy="110" r=".9"/>
+        <circle cx="610" cy="20" r=".8"/><circle cx="420" cy="70" r="1"/><circle cx="760" cy="140" r=".8"/>
+      </g>
+
+      <!-- far skyline -->
+      <g fill="#0a1a33" opacity=".95">
+        <rect x="0" y="390" width="60" height="230"/><rect x="55" y="340" width="40" height="280"/>
+        <rect x="95" y="370" width="55" height="250"/><rect x="150" y="300" width="35" height="320"/>
+        <rect x="185" y="360" width="60" height="260"/><rect x="250" y="410" width="50" height="210"/>
+        <rect x="700" y="400" width="45" height="220"/><rect x="745" y="350" width="60" height="270"/>
+        <rect x="805" y="320" width="40" height="300"/><rect x="845" y="380" width="70" height="240"/>
+        <rect x="915" y="340" width="45" height="280"/><rect x="960" y="400" width="40" height="220"/>
+        <!-- TV tower -->
+        <rect x="868" y="170" width="6" height="210"/><ellipse cx="871" cy="235" rx="16" ry="7"/><rect x="869" y="120" width="4" height="50"/>
+        <!-- twin domed towers -->
+        <rect x="770" y="250" width="22" height="100"/><path d="M770 250q11-28 22 0z"/>
+        <rect x="800" y="250" width="22" height="100"/><path d="M800 250q11-28 22 0z"/>
+        <rect x="760" y="320" width="72" height="40"/>
+      </g>
+      <g fill="url(#windows)" opacity=".8">
+        <rect x="55" y="350" width="40" height="270"/><rect x="150" y="310" width="35" height="310"/>
+        <rect x="745" y="360" width="60" height="260"/><rect x="915" y="350" width="45" height="270"/>
+        <rect x="185" y="370" width="60" height="250"/><rect x="845" y="390" width="70" height="230"/>
+      </g>
+      <circle cx="871" cy="118" r="3" fill="#ff5d6c"><animate attributeName="opacity" values="1;.2;1" dur="1.6s" repeatCount="indefinite"/></circle>
+
+      <g transform="translate(110 0)">
+      <!-- globe halo -->
+      <circle cx="500" cy="235" r="190" fill="url(#halo)"/>
+      <!-- globe -->
+      <circle cx="500" cy="235" r="135" fill="url(#globeFill)" stroke="#7fd6ff" stroke-width="1.5"/>
+      <g clip-path="url(#globeClip)">
+        <g fill="url(#dots)" opacity=".9">
+          <animateTransform attributeName="transform" type="translate" from="0 0" to="-400 0" dur="24s" repeatCount="indefinite"/>
+          <use href="#land"/><use href="#land" x="400"/><use href="#land" x="-400"/>
+        </g>
+        <g fill="none" stroke="#7fd6ff" stroke-opacity=".5" stroke-width="1">
+          <ellipse cx="500" cy="235" rx="135" ry="40"/><ellipse cx="500" cy="235" rx="135" ry="90"/>
+          <line x1="365" y1="235" x2="635" y2="235"/>
+          <ellipse cx="500" cy="235" rx="40" ry="135"><animate attributeName="rx" values="135;0;135" dur="12s" repeatCount="indefinite"/></ellipse>
+          <ellipse cx="500" cy="235" rx="90" ry="135"><animate attributeName="rx" values="0;135;0" dur="12s" repeatCount="indefinite"/></ellipse>
+          <ellipse cx="500" cy="235" rx="110" ry="135"><animate attributeName="rx" values="70;135;0;70" dur="12s" repeatCount="indefinite"/></ellipse>
+        </g>
+      </g>
+      <!-- orbit rings -->
+      <g fill="none">
+        <ellipse cx="500" cy="235" rx="210" ry="55" stroke="#3fb8ff" stroke-width="2" stroke-opacity=".7" transform="rotate(-18 500 235)"/>
+        <ellipse cx="500" cy="235" rx="230" ry="70" stroke="#e8b75a" stroke-width="1.5" stroke-opacity=".6" stroke-dasharray="6 10" transform="rotate(14 500 235)"/>
+      </g>
+      <circle r="6" fill="#ffd88a">
+        <animateMotion dur="9s" repeatCount="indefinite" path="M290 235a210 55 0 1 0 420 0a210 55 0 1 0 -420 0" rotate="0"/>
+      </circle>
+
+      <!-- beam -->
+      <polygon points="455,370 545,370 600,520 400,520" fill="url(#beam)"/>
+
+      <!-- holographic city on platform -->
+      <g fill="url(#tower)" opacity=".9">
+        <rect x="430" y="470" width="14" height="45"/><rect x="448" y="450" width="12" height="65"/>
+        <rect x="464" y="430" width="16" height="85"/><rect x="484" y="400" width="14" height="115"/>
+        <rect x="502" y="420" width="16" height="95"/><rect x="522" y="445" width="12" height="70"/>
+        <rect x="538" y="460" width="16" height="55"/><rect x="558" y="480" width="10" height="35"/>
+        <polygon points="491,400 491,385 493,375 495,385 495,400"/>
+      </g>
+      <!-- platform -->
+      <ellipse cx="500" cy="520" rx="220" ry="45" fill="url(#platform)"/>
+      <g fill="none" stroke="#7fd6ff">
+        <ellipse cx="500" cy="520" rx="170" ry="32" stroke-opacity=".8" stroke-width="2"/>
+        <ellipse cx="500" cy="520" rx="120" ry="22" stroke-opacity=".6" stroke-dasharray="4 6"/>
+        <ellipse cx="500" cy="520" rx="220" ry="45" stroke-opacity=".35"/>
+      </g>
+      </g>
+      <!-- floor reflection -->
+      <rect x="0" y="565" width="1000" height="55" fill="#06101f" opacity=".85"/>
+    </svg>
+
+    <section class="assistant glass" aria-label="AI-асистент">
+      <div class="head panel-title">
+        <span><span class="ico">≋</span>AI-асистент</span>
+        <span class="online"><span class="dot ok" id="aiDot"></span><span id="aiState">Онлайн</span></span>
+      </div>
+      <!-- original AI core (abstract) -->
+      <svg class="core" viewBox="0 0 200 200" aria-hidden="true">
+        <circle cx="100" cy="100" r="92" fill="none" stroke="#3fb8ff" stroke-opacity=".35"/>
+        <circle cx="100" cy="100" r="80" fill="none" stroke="#3fb8ff" stroke-width="2" stroke-dasharray="40 14" class="spin"/>
+        <circle cx="100" cy="100" r="66" fill="none" stroke="#e8b75a" stroke-width="1.5" stroke-dasharray="6 8" class="spin rev"/>
+        <polygon points="100,46 147,73 147,127 100,154 53,127 53,73" fill="rgba(10,40,80,.6)" stroke="#7fd6ff" stroke-width="2"/>
+        <polygon points="100,66 130,83 130,117 100,134 70,117 70,83" fill="none" stroke="#7fd6ff" stroke-opacity=".6"/>
+        <circle cx="100" cy="100" r="26" fill="url(#coreGlow)">
+          <animate attributeName="r" values="22;28;22" dur="3s" repeatCount="indefinite"/>
+        </circle>
+      </svg>
+      <div class="bubble" id="bubble"><b>Привіт, <span class="uName">Djek</span>!</b><br>Готовий допомогти. Що робимо сьогодні?</div>
+      <div class="cmd">
+        <input id="cmdInput" placeholder="Введіть команду…" autocomplete="off">
+        <button id="cmdSend" aria-label="Надіслати">➤</button>
+      </div>
+      <div class="voicebar">
+        <div class="wave" id="wave"></div>
+        <button class="mic" id="micBtn" aria-label="Голосова команда"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
+      </div>
+    </section>
   </main>
 
-  <aside class="panel">
-    <h2>ЦЕНТР ПРОЄКТІВ</h2>
-    <div class="task">● Створення сайту</div>
-    <div class="task">● Карткова гра</div>
-    <div class="task">● Відео та монтаж</div>
-    <div class="task">● Бізнес-проєкти</div>
+  <!-- ===== SIDE ===== -->
+  <aside class="side">
+    <section class="card glass">
+      <div class="panel-title">
+        <span><span class="ico">▣</span>Проєкти</span>
+        <span class="badge-add">Активні: <b id="pCount">0</b><button class="icon-btn" id="pAddBtn" aria-label="Додати проєкт">+</button></span>
+      </div>
+      <ul class="plist" id="pList"></ul>
+      <div class="addrow" id="pAddRow"><input id="pAddInput" placeholder="Назва проєкту"><button id="pAddOk">OK</button></div>
+    </section>
 
-    <h2>СТАТУС СИСТЕМИ</h2>
-    <div class="task">Інтерфейс: активний</div>
-    <div class="task">AI-модель: не підключена</div>
-    <div class="task">Голос: тестовий режим</div>
-    <div class="task">Пам'ять: наступний етап</div>
+    <section class="card glass">
+      <div class="panel-title"><span><span class="ico">⬡</span>Фінанси</span><span class="muted" style="font-size:11px;letter-spacing:.05em">демо</span></div>
+      <div class="fin">
+        <svg class="coins" viewBox="0 0 60 60" aria-hidden="true">
+          <g fill="url(#goldGrad)" stroke="#8a5d1c" stroke-width="1">
+            <ellipse cx="22" cy="48" rx="16" ry="5"/><rect x="6" y="36" width="32" height="12"/><ellipse cx="22" cy="36" rx="16" ry="5"/>
+            <ellipse cx="40" cy="50" rx="14" ry="4.5"/><rect x="26" y="26" width="28" height="24"/><ellipse cx="40" cy="26" rx="14" ry="4.5"/>
+          </g>
+        </svg>
+        <div>
+          <small>Баланс компанії</small>
+          <div class="bal" id="balance">€12,450.00</div>
+          <div class="chg">↗ +12.5%</div>
+        </div>
+      </div>
+      <svg class="spark" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true">
+        <defs><linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8b75a" stop-opacity=".45"/><stop offset="1" stop-color="#e8b75a" stop-opacity="0"/></linearGradient></defs>
+        <path id="sparkArea" fill="url(#sparkFill)"/>
+        <path id="sparkLine" fill="none" stroke="#ffd88a" stroke-width="2"/>
+      </svg>
+      <div style="text-align:right;margin-top:6px"><button class="btn-ghost" id="finBtn">Деталі →</button></div>
+    </section>
+
+    <section class="card glass">
+      <div class="panel-title">
+        <span><span class="ico">▦</span>Календар</span>
+        <span class="badge-add">Сьогодні<button class="icon-btn" id="eAddBtn" aria-label="Додати подію">+</button></span>
+      </div>
+      <div class="cal">
+        <div class="daybox"><b id="calDay">--</b><span id="calMon">—</span></div>
+        <ul class="events" id="eList"></ul>
+      </div>
+      <div class="addrow" id="eAddRow"><input id="eTime" type="time" style="flex:0 0 100px"><input id="eTitle" placeholder="Подія"><button id="eAddOk">OK</button></div>
+    </section>
   </aside>
+
+  <!-- ===== DOCK ===== -->
+  <footer class="dock">
+    <button class="action glass gold" id="dVoice"><svg viewBox="0 0 24 24"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg>Голосова команда</button>
+    <button class="action glass" id="dProject"><svg viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>Створити проєкт</button>
+    <button class="action glass" id="dClients"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.3-5.5 6.5-5.5s5.9 2 6.5 5.5M16 4.8a3.5 3.5 0 010 6.4M18 14.8c1.9.8 3.1 2.6 3.5 5.2"/></svg>Знайти клієнтів</button>
+    <button class="mode" id="modeBtn" aria-label="Перемкнути режим">
+      <svg class="emblem"><use href="#emblem"/></svg>
+      <span>РЕЖИМ: <b id="modeLabel">MAX</b></span>
+    </button>
+    <button class="action glass" id="dAnalysis"><svg viewBox="0 0 24 24"><path d="M5 20V12M10 20V6M15 20v-9M20 20V4"/></svg>Аналіз даних</button>
+    <button class="action glass" id="dReport"><svg viewBox="0 0 24 24"><path d="M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8"/></svg>Згенерувати звіт</button>
+    <button class="action glass" id="dBrowser"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg>Відкрити браузер</button>
+    <div class="status glass">
+      <h4>СТАТУС СИСТЕМИ</h4>
+      <div><span class="dot" id="sNet"></span>Інтернет</div>
+      <div><span class="dot" id="sGit"></span>GitHub</div>
+      <div><span class="dot" id="sAi"></span>AI модель <small id="sAiTxt" class="muted">· очікує</small></div>
+      <div><span class="dot" id="sAll"></span><span id="sAllTxt">Перевірка…</span></div>
+    </div>
+  </footer>
 </div>
 
-<footer>
-  STARK AI OFFICE © 2026 · PERSONAL COMMAND CENTER
-</footer>
+<div class="toast" id="toast"></div>
 
 <script>
-function show(section) {
-  document.getElementById("response").textContent =
-    "Відкрито розділ: " + section +
-    ". Очікую команду керівника.";
+/* ====== НАЛАШТУВАННЯ — змінюйте тут ====== */
+const CONFIG = {
+  userName: "Djek",
+  userRole: "CEO",
+  city: "München",
+  lat: 48.137, lon: 11.575,
+  githubRepo: "greenbullhelp/Start-VLASTELIN-AI-Office-",
+  aiConnected: false,            // стане true, коли підключимо AI-модель через сервер
+  defaultProjects: ["Транспортна компанія","Сайт нового покоління","AI-асистент для бізнесу","Енергетичний проєкт"],
+  defaultEvents: [{t:"09:00",title:"Зустріч з клієнтом"},{t:"11:30",title:"Планування проєктів"},{t:"14:00",title:"Аналіз ринку"}]
+};
+
+/* ====== helpers ====== */
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, fallback){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+let toastTimer;
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove("show"), 2800);
 }
+function say(html){ $("bubble").innerHTML = html; }
+function esc(s){ return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
-function send() {
-  const input = document.getElementById("command");
-  const message = input.value.trim();
+/* ====== user ====== */
+$("uName").textContent = CONFIG.userName;
+$("uRole").textContent = CONFIG.userRole;
+$("uInitial").textContent = CONFIG.userName.charAt(0).toUpperCase();
+document.querySelectorAll(".uName").forEach(e => e.textContent = CONFIG.userName);
+$("wCity").textContent = CONFIG.city;
 
-  if (!message) return;
-
-  document.getElementById("response").textContent =
-    "Команду отримано: " + message +
-    ". Для виконання потрібно підключити AI-модель.";
-
-  input.value = "";
+/* ====== clock & date ====== */
+const MONTHS = ["січня","лютого","березня","квітня","травня","червня","липня","серпня","вересня","жовтня","листопада","грудня"];
+function tick(){
+  const d = new Date();
+  $("time").textContent = d.toLocaleTimeString("uk-UA",{hour:"2-digit",minute:"2-digit"});
+  $("date").textContent = d.toLocaleDateString("uk-UA",{weekday:"short",day:"2-digit",month:"2-digit",year:"numeric"});
+  $("calDay").textContent = d.getDate();
+  $("calMon").textContent = MONTHS[d.getMonth()];
 }
+tick(); setInterval(tick, 1000);
 
-function listen() {
-  const SpeechRecognition =
-    window.SpeechRecognition ||
-    window.webkitSpeechRecognition;
+/* ====== weather (Open-Meteo, без ключа) ====== */
+function wIcon(code){
+  if(code===0) return "☀️"; if(code<=2) return "🌤️"; if(code===3) return "☁️";
+  if(code<=48) return "🌫️"; if(code<=67) return "🌧️"; if(code<=77) return "🌨️";
+  if(code<=82) return "🌦️"; return "⛈️";
+}
+async function loadWeather(){
+  try{
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}&current=temperature_2m,weather_code&timezone=auto`);
+    const j = await r.json();
+    const t = Math.round(j.current.temperature_2m);
+    $("wTemp").textContent = (t>0?"+":"") + t + "°C";
+    $("wIcon").textContent = wIcon(j.current.weather_code);
+  }catch(e){ $("wTemp").textContent = "н/д"; }
+}
+loadWeather(); setInterval(loadWeather, 15*60*1000);
 
-  if (!SpeechRecognition) {
-    document.getElementById("response").textContent =
-      "Голосове розпізнавання недоступне. Використай текстове поле.";
-    return;
+/* ====== navigation ====== */
+$("menu").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  document.querySelectorAll(".menu button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  say(`<b>Розділ «${b.dataset.s}»</b><br>Відкрито. Наповнення цього розділу — наступний етап.`);
+});
+
+/* ====== projects ====== */
+let projects = store.get("vl_projects", CONFIG.defaultProjects);
+function renderProjects(){
+  $("pList").innerHTML = projects.map((p,i)=>`<li><span>${esc(p)}</span><button data-i="${i}" aria-label="Видалити">×</button></li>`).join("")
+    || `<li class="empty">Проєктів поки немає</li>`;
+  $("pCount").textContent = projects.length;
+  store.set("vl_projects", projects);
+}
+$("pList").addEventListener("click", e => {
+  const b = e.target.closest("button[data-i]"); if(!b) return;
+  const name = projects[b.dataset.i]; projects.splice(b.dataset.i,1); renderProjects(); toast(`Проєкт «${name}» видалено`);
+});
+function openProjectAdd(){ $("pAddRow").classList.add("show"); $("pAddInput").focus(); }
+function addProject(){
+  const v = $("pAddInput").value.trim(); if(!v) return;
+  projects.push(v); $("pAddInput").value = ""; $("pAddRow").classList.remove("show"); renderProjects(); toast(`Проєкт «${v}» створено`);
+}
+$("pAddBtn").onclick = openProjectAdd;
+$("dProject").onclick = openProjectAdd;
+$("pAddOk").onclick = addProject;
+$("pAddInput").onkeydown = e => { if(e.key==="Enter") addProject(); };
+renderProjects();
+
+/* ====== calendar ====== */
+let events = store.get("vl_events", CONFIG.defaultEvents);
+function renderEvents(){
+  events.sort((a,b)=>a.t.localeCompare(b.t));
+  const shown = events.slice(0,3);
+  $("eList").innerHTML = shown.map((ev,i)=>`<li><time>${esc(ev.t)}</time><span>${esc(ev.title)}</span><button data-i="${i}" aria-label="Видалити">×</button></li>`).join("")
+    + (events.length>3 ? `<li class="muted">+ ще ${events.length-3}</li>` : "")
+    || `<li class="empty">Подій немає</li>`;
+  store.set("vl_events", events);
+}
+$("eList").addEventListener("click", e => {
+  const b = e.target.closest("button[data-i]"); if(!b) return;
+  events.splice(b.dataset.i,1); renderEvents();
+});
+$("eAddBtn").onclick = () => { $("eAddRow").classList.toggle("show"); $("eTitle").focus(); };
+function addEvent(){
+  const t = $("eTime").value || "12:00", title = $("eTitle").value.trim(); if(!title) return;
+  events.push({t,title}); $("eTitle").value=""; $("eAddRow").classList.remove("show"); renderEvents(); toast("Подію додано");
+}
+$("eAddOk").onclick = addEvent;
+$("eTitle").onkeydown = e => { if(e.key==="Enter") addEvent(); };
+renderEvents();
+
+/* ====== finance sparkline (демо-дані) ====== */
+(function(){
+  const pts = [20,24,22,30,28,34,31,38,36,44,41,50,48,56];
+  const max = 60, w = 300, h = 60, step = w/(pts.length-1);
+  const line = pts.map((v,i)=>`${i?"L":"M"}${(i*step).toFixed(1)} ${(h - v/max*h).toFixed(1)}`).join(" ");
+  $("sparkLine").setAttribute("d", line);
+  $("sparkArea").setAttribute("d", line + ` L${w} ${h} L0 ${h} Z`);
+})();
+$("finBtn").onclick = () => say(`<b>Фінанси</b><br>Зараз це демо-цифри. Наступний крок — підключити реальні дані (таблиця або банк).`);
+
+/* ====== assistant: text commands ====== */
+function handleCommand(text){
+  const t = text.toLowerCase();
+  if(/проєкт|проект/.test(t) && /(створ|додай|новий)/.test(t)){
+    const name = text.replace(/.*(проєкт|проект)\s*/i,"").trim();
+    if(name){ projects.push(name); renderProjects(); say(`<b>Готово.</b><br>Проєкт «${esc(name)}» створено.`); return; }
   }
-
-  const recognition = new SpeechRecognition();
-  recognition.lang = "uk-UA";
-
-  recognition.onresult = function(event) {
-    document.getElementById("command").value =
-      event.results[0][0].transcript;
-    send();
-  };
-
-  recognition.onerror = function() {
-    document.getElementById("response").textContent =
-      "Помилка розпізнавання голосу. Спробуй ще раз.";
-  };
-
-  recognition.start();
+  if(/час|котра/.test(t)){ say(`<b>Зараз ${$("time").textContent}</b>`); return; }
+  if(/погода/.test(t)){ say(`<b>${CONFIG.city}:</b> ${$("wTemp").textContent} ${$("wIcon").textContent}`); return; }
+  if(/звіт/.test(t)){ makeReport(); return; }
+  if(!CONFIG.aiConnected){
+    say(`<b>Команду прийнято:</b> «${esc(text)}»<br><span class="muted">Для розумних відповідей потрібно підключити AI-модель. Поки я розумію: «створи проєкт …», «котра година», «погода», «звіт».</span>`);
+  }
 }
+function sendCmd(){ const v = $("cmdInput").value.trim(); if(!v) return; $("cmdInput").value=""; handleCommand(v); }
+$("cmdSend").onclick = sendCmd;
+$("cmdInput").onkeydown = e => { if(e.key==="Enter") sendCmd(); };
+
+/* ====== voice ====== */
+const wave = $("wave");
+for(let i=0;i<28;i++){ const b=document.createElement("i"); b.style.animationDelay=(Math.random()*1.2).toFixed(2)+"s"; wave.appendChild(b); }
+let rec = null;
+function startVoice(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ say("<b>Голос недоступний</b><br>Цей браузер не підтримує розпізнавання мови. Спробуйте Chrome або введіть текст."); return; }
+  if(rec){ rec.stop(); return; }
+  rec = new SR(); rec.lang = "uk-UA"; rec.interimResults = false;
+  $("micBtn").classList.add("live"); wave.classList.add("live"); say("<b>Слухаю…</b>");
+  rec.onresult = e => { const txt = e.results[0][0].transcript; $("cmdInput").value = txt; sendCmd(); };
+  rec.onerror = () => say("<b>Не розчув.</b><br>Спробуйте ще раз.");
+  rec.onend = () => { rec = null; $("micBtn").classList.remove("live"); wave.classList.remove("live"); };
+  rec.start();
+}
+$("micBtn").onclick = startVoice;
+$("dVoice").onclick = startVoice;
+
+/* ====== dock actions ====== */
+$("dClients").onclick = () => say(`<b>Пошук клієнтів</b><br>Цей модуль з'явиться після підключення AI-моделі та джерел даних.`);
+$("dAnalysis").onclick = () => say(`<b>Аналіз даних</b><br>Активних проєктів: ${projects.length}. Подій сьогодні: ${events.length}.`);
+$("dBrowser").onclick = () => window.open("https://www.google.com", "_blank", "noopener");
+function makeReport(){
+  const d = new Date();
+  const txt = [
+    `VLASTELIN — звіт за ${d.toLocaleDateString("uk-UA")}`, "",
+    `Проєкти (${projects.length}):`, ...projects.map(p=>" • "+p), "",
+    `Події сьогодні (${events.length}):`, ...events.map(e=>` • ${e.t} — ${e.title}`)
+  ].join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([txt],{type:"text/plain;charset=utf-8"}));
+  a.download = `vlastelin-zvit-${d.toISOString().slice(0,10)}.txt`; a.click();
+  say("<b>Звіт згенеровано</b><br>Файл завантажено.");
+}
+$("dReport").onclick = makeReport;
+$("modeBtn").onclick = () => {
+  const eco = document.body.classList.toggle("eco");
+  $("modeLabel").textContent = eco ? "ECO" : "MAX";
+  toast(eco ? "Режим ECO: анімації призупинено" : "Режим MAX");
+};
+
+/* ====== system status (реальні перевірки) ====== */
+function setDot(id, state){ const el=$(id); el.className = "dot " + state; }
+async function checkStatus(){
+  const net = navigator.onLine; setDot("sNet", net ? "ok" : "bad");
+  let git = false;
+  try{ const r = await fetch(`https://api.github.com/repos/${CONFIG.githubRepo}`); git = r.ok; }catch(e){}
+  setDot("sGit", git ? "ok" : "bad");
+  setDot("sAi", CONFIG.aiConnected ? "ok" : "warn");
+  $("sAiTxt").textContent = CONFIG.aiConnected ? "· онлайн" : "· очікує";
+  $("aiState").textContent = CONFIG.aiConnected ? "Онлайн" : "Базовий режим";
+  setDot("aiDot", CONFIG.aiConnected ? "ok" : "warn");
+  const all = net && git && CONFIG.aiConnected;
+  const some = net;
+  setDot("sAll", all ? "ok" : some ? "warn" : "bad");
+  $("sAllTxt").textContent = all ? "Усі системи ОК" : some ? "Частково активна" : "Є проблеми";
+  setDot("miniDot", all ? "ok" : some ? "warn" : "bad");
+  $("miniTitle").textContent = all ? "Система активна" : some ? "Система активна" : "Немає зв'язку";
+  $("miniSub").textContent = all ? "Усі сервіси в мережі" : some ? (git ? "AI-модель очікує підключення" : "GitHub недоступний") : "Перевірте інтернет";
+}
+checkStatus();
+window.addEventListener("online", checkStatus);
+window.addEventListener("offline", checkStatus);
 </script>
 </body>
 </html>

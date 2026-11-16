@@ -1,1 +1,383 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#080b12">
+<title>STARK AI OFFICE</title>
+<style>
+:root {
+  --black: #080b12;
+  --panel: rgba(15, 23, 37, .92);
+  --blue: #20baff;
+  --gold: #d8b15e;
+  --coffee: #35251f;
+  --white: #eaf2ff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--black);
+  color: var(--white);
+  font-family: Arial, sans-serif;
+}
+header {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid #26384b;
+  background: #090e18;
+}
+.logo {
+  color: var(--gold);
+  letter-spacing: 3px;
+  font-weight: bold;
+}
+.status {
+  color: #43dda0;
+  font-size: 12px;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 210px 1fr 250px;
+  gap: 15px;
+  padding: 15px;
+  min-height: calc(100vh - 100px);
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid #283d54;
+  border-radius: 14px;
+  padding: 17px;
+}
+h2 {
+  color: var(--gold);
+  font-size: 13px;
+  letter-spacing: 2px;
+}
+.menu button {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  margin: 8px 0;
+  background: #111e30;
+  border: 1px solid #25384c;
+  border-radius: 8px;
+  color: white;
+  text-align: left;
+  cursor: pointer;
+}
+.menu button:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.office {
+  position: relative;
+  min-height: 590px;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 60%, #173b5a, transparent 55%),
+    linear-gradient(160deg, #101b2b, #080b12 75%);
+}
+.planet {
+  position: absolute;
+  width: 125px;
+  height: 125px;
+  top: 55px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    #fff1ca,
+    #d4b66c 30%,
+    #315a80 65%,
+    #101a2b 85%
+  );
+  box-shadow: 0 0 35px #218fc9, 0 0 80px #164e79;
+  animation: orbit 18s linear infinite;
+}
+.planet::after {
+  content: "";
+  position: absolute;
+  width: 175px;
+  height: 45px;
+  top: 40px;
+  left: -25px;
+  border: 2px solid rgba(216,177,94,.8);
+  border-radius: 50%;
+  transform: rotate(-20deg);
+}
+@keyframes orbit {
+  from { rotate: 0deg; }
+  to { rotate: 360deg; }
+}
+.city-label {
+  position: absolute;
+  top: 195px;
+  width: 100%;
+  text-align: center;
+  color: var(--gold);
+  letter-spacing: 4px;
+  font-size: 12px;
+}
+.skyline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 42%;
+  display: flex;
+  align-items: end;
+  justify-content: space-around;
+}
+.building {
+  width: 10%;
+  background: linear-gradient(#183c5b, #09111e);
+  border: 1px solid #2876a3;
+  box-shadow: 0 0 12px #0876a9;
+}
+.building:nth-child(1) { height: 55%; }
+.building:nth-child(2) { height: 80%; }
+.building:nth-child(3) { height: 65%; }
+.building:nth-child(4) { height: 100%; }
+.building:nth-child(5) { height: 72%; }
+.building:nth-child(6) { height: 90%; }
+.building:nth-child(7) { height: 50%; }
+.assistant {
+  position: absolute;
+  left: 20px;
+  top: 43%;
+  width: 115px;
+  text-align: center;
+  z-index: 2;
+}
+.avatar {
+  width: 75px;
+  height: 95px;
+  margin: auto;
+  border-radius: 40% 40% 45% 45%;
+  background: linear-gradient(
+    120deg,
+    #ffffff,
+    #9eafbf,
+    #e8f5ff,
+    #52677d
+  );
+  box-shadow: 0 0 20px var(--blue);
+  clip-path: polygon(
+    25% 0, 75% 0, 100% 35%,
+    85% 85%, 50% 100%, 15% 85%, 0 35%
+  );
+}
+.assistant small {
+  display: block;
+  color: var(--blue);
+  margin-top: 10px;
+  font-size: 10px;
+}
+.center-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding-top: 240px;
+}
+.center-content h1 {
+  color: var(--gold);
+  letter-spacing: 4px;
+  font-size: 23px;
+}
+.center-content p {
+  color: #a7c8e4;
+  font-size: 13px;
+}
+.voice {
+  background: linear-gradient(100deg, #087cb7, #c49a48);
+  color: white;
+  border: none;
+  padding: 13px 25px;
+  border-radius: 25px;
+  cursor: pointer;
+  margin: 10px;
+}
+input {
+  width: 100%;
+  background: #090f19;
+  border: 1px solid #31506c;
+  padding: 13px;
+  color: white;
+  border-radius: 8px;
+  margin-top: 12px;
+}
+.task {
+  padding: 12px;
+  margin: 10px 0;
+  background: #182536;
+  border-left: 3px solid var(--gold);
+  border-radius: 5px;
+  font-size: 12px;
+}
+footer {
+  padding: 15px;
+  text-align: center;
+  color: #75869b;
+  font-size: 10px;
+}
+@media(max-width:850px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .office {
+    min-height: 520px;
+  }
+  .assistant {
+    left: 8px;
+    transform: scale(.8);
+    transform-origin: top left;
+  }
+  .planet {
+    width: 90px;
+    height: 90px;
+  }
+  .city-label {
+    top: 170px;
+  }
+  .center-content {
+    padding-top: 220px;
+  }
+  .menu {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px;
+  }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">STARK AI OFFICE</div>
+  <div class="status">● SYSTEM ONLINE</div>
+</header>
 
+<div class="layout">
+  <aside class="panel">
+    <h2>НАВІГАЦІЯ</h2>
+    <div class="menu">
+      <button onclick="show('Головна')">⌂ Головна</button>
+      <button onclick="show('Бізнес-центр')">◈ Бізнес</button>
+      <button onclick="show('Розробка')">⌘ Розробка</button>
+      <button onclick="show('Медіацентр')">▶ Медіа</button>
+      <button onclick="show('Фінанси')">€ Фінанси</button>
+      <button onclick="show('Аналітика')">◉ Аналітика</button>
+      <button onclick="show('Комунікації')">✉ Комунікації</button>
+    </div>
+  </aside>
+
+  <main class="panel office">
+    <div class="planet"></div>
+    <div class="city-label">DIGITAL CITY · FUTURE NETWORK</div>
+
+    <div class="skyline">
+      <div class="building"></div>
+      <div class="building"></div>
+      <div class="building"></div>
+      <div class="building"></div>
+      <div class="building"></div>
+      <div class="building"></div>
+      <div class="building"></div>
+    </div>
+
+    <div class="assistant">
+      <div class="avatar"></div>
+      <small>STARK AI</small>
+      <small>YOUR ASSISTANT</small>
+    </div>
+
+    <div class="center-content">
+      <h1>STARK AI</h1>
+      <p id="response">Вітаю, керівнику. Система готова до роботи.</p>
+
+      <button class="voice" onclick="listen()">
+        🎙 ГОЛОСОВА КОМАНДА
+      </button>
+
+      <input
+        id="command"
+        placeholder="Введи свою команду..."
+        onkeydown="if(event.key==='Enter')send()"
+      >
+
+      <button class="voice" onclick="send()">ВІДПРАВИТИ</button>
+    </div>
+  </main>
+
+  <aside class="panel">
+    <h2>ЦЕНТР ПРОЄКТІВ</h2>
+    <div class="task">● Створення сайту</div>
+    <div class="task">● Карткова гра</div>
+    <div class="task">● Відео та монтаж</div>
+    <div class="task">● Бізнес-проєкти</div>
+
+    <h2>СТАТУС СИСТЕМИ</h2>
+    <div class="task">Інтерфейс: активний</div>
+    <div class="task">AI-модель: не підключена</div>
+    <div class="task">Голос: тестовий режим</div>
+    <div class="task">Пам'ять: наступний етап</div>
+  </aside>
+</div>
+
+<footer>
+  STARK AI OFFICE © 2026 · PERSONAL COMMAND CENTER
+</footer>
+
+<script>
+function show(section) {
+  document.getElementById("response").textContent =
+    "Відкрито розділ: " + section +
+    ". Очікую команду керівника.";
+}
+
+function send() {
+  const input = document.getElementById("command");
+  const message = input.value.trim();
+
+  if (!message) return;
+
+  document.getElementById("response").textContent =
+    "Команду отримано: " + message +
+    ". Для виконання потрібно підключити AI-модель.";
+
+  input.value = "";
+}
+
+function listen() {
+  const SpeechRecognition =
+    window.SpeechRecognition ||
+    window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    document.getElementById("response").textContent =
+      "Голосове розпізнавання недоступне. Використай текстове поле.";
+    return;
+  }
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = "uk-UA";
+
+  recognition.onresult = function(event) {
+    document.getElementById("command").value =
+      event.results[0][0].transcript;
+    send();
+  };
+
+  recognition.onerror = function() {
+    document.getElementById("response").textContent =
+      "Помилка розпізнавання голосу. Спробуй ще раз.";
+  };
+
+  recognition.start();
+}
+</script>
+</body>
+</html>

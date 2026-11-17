@@ -302,9 +302,7 @@ async function pingAgent() {
 }
 async function checkStatus() {
   netOk = navigator.onLine; setDot("sNet", netOk ? "ok" : "bad");
-  // The repo is private, so an anonymous /repos/... call would 404; check that GitHub itself is reachable
-  // (/rate_limit is CORS-enabled and does not consume the anonymous quota).
-  try { gitOk = (await fetch("https://api.github.com/rate_limit")).ok; } catch (e) { gitOk = false; }
+  try { gitOk = (await fetch(`https://api.github.com/repos/${CONFIG.githubRepo}`)).ok; } catch (e) { gitOk = false; }
   setDot("sGit", gitOk ? "ok" : "bad");
   setAiState((await pingAgent()).ok);
 }

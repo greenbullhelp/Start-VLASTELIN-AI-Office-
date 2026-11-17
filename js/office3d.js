@@ -40,8 +40,8 @@ function windowTexture(seed) {
   });
 }
 
-function planetTextures() {
-  const W = 1024, H = 512;
+function planetTextures(W = 1024, H = 512) {
+  const step = Math.max(2, Math.round(6 * W / 1024)); // крок точок над континентами
   const col = document.createElement('canvas'); col.width = W; col.height = H;
   const lit = document.createElement('canvas'); lit.width = W; lit.height = H;
   const bmp = document.createElement('canvas'); bmp.width = W; bmp.height = H;
@@ -84,7 +84,7 @@ function planetTextures() {
       if (land && !ice) {
         const c = noise3(px * 22, py * 22, pz * 22);
         if (c > 0.22 && r() < 0.16) L = 150 + r() * 105;
-        if (x % 6 === 0 && y % 6 === 0 && r() < 0.35) dots.push([lat, lon]);
+        if (x % step === 0 && y % step === 0 && r() < 0.35) dots.push([lat, lon]);
       }
       li.data[i] = L; li.data[i + 1] = L * 0.82; li.data[i + 2] = L * 0.5; li.data[i + 3] = 255;
     }
@@ -96,8 +96,7 @@ function planetTextures() {
   return { map, lights, bump, dots };
 }
 
-function cloudTexture() {
-  const W = 512, H = 256;
+function cloudTexture(W = 512, H = 256) {
   return canvasTex(W, H, (g) => {
     const img = g.createImageData(W, H);
     for (let y = 0; y < H; y++) {
@@ -114,9 +113,9 @@ function cloudTexture() {
   }, false);
 }
 
-function platformTexture() {
-  return canvasTex(1024, 1024, (g, w) => {
-    const c = w / 2; g.translate(c, c);
+function platformTexture(S = 1024) {
+  return canvasTex(S, S, (g) => {
+    const w = 1024, c = w / 2; g.scale(S / w, S / w); g.translate(c, c);
     const ring = (r, lw, col, a = 1, dash = null) => {
       g.beginPath(); g.setLineDash(dash || []); g.lineWidth = lw; g.strokeStyle = col; g.globalAlpha = a;
       g.arc(0, 0, r, 0, Math.PI * 2); g.stroke();
@@ -145,15 +144,64 @@ function radialSprite(inner = 'rgba(160,230,255,1)', outer = 'rgba(0,0,0,0)') {
   });
 }
 
+// екран пульта: графік (kind 0) або стовпчики й рядки «даних» (kind 1); ширина 2× для прокрутки
+function screenTexture(kind) {
+  const t = canvasTex(256, 128, (g, w, h) => {
+    g.fillStyle = 'rgba(6,22,44,.92)'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(95,200,255,.18)'; g.lineWidth = 1;
+    for (let x = 0; x <= w; x += 16) { g.beginPath(); g.moveTo(x + .5, 0); g.lineTo(x + .5, h); g.stroke(); }
+    for (let y = 0; y <= h; y += 16) { g.beginPath(); g.moveTo(0, y + .5); g.lineTo(w, y + .5); g.stroke(); }
+    const r = rand(kind ? 61 : 19);
+    if (kind === 0) {
+      g.strokeStyle = '#8fe0ff'; g.lineWidth = 2; g.beginPath();
+      for (let x = 0; x <= w; x += 4) { const y = h * .55 + Math.sin(x / w * Math.PI * 4) * 22 + (r() - .5) * 10; x ? g.lineTo(x, y) : g.moveTo(x, y); }
+      g.stroke();
+      g.strokeStyle = 'rgba(232,183,90,.85)'; g.lineWidth = 1.5; g.beginPath();
+      for (let x = 0; x <= w; x += 8) { const y = h * .75 + Math.cos(x / w * Math.PI * 6) * 10; x ? g.lineTo(x, y) : g.moveTo(x, y); }
+      g.stroke();
+    } else {
+      for (let x = 6; x < w; x += 12) { const bh = 10 + r() * 60; g.fillStyle = r() < .2 ? 'rgba(232,183,90,.85)' : 'rgba(95,200,255,.7)'; g.fillRect(x, h - 8 - bh, 7, bh); }
+      g.fillStyle = 'rgba(200,240,255,.55)';
+      for (let y = 10; y < 46; y += 9) for (let x = 6; x < w; x += 64) g.fillRect(x, y, 20 + r() * 34, 3);
+    }
+  });
+  t.wrapS = THREE.RepeatWrapping; t.repeat.x = .5;
+  return t;
+}
+
+// підлога: ледь помітна радіальна розмітка й концентричні шви плит
+function floorTexture(S) {
+  return canvasTex(S, S, (g, w) => {
+    const c = w / 2; g.fillStyle = '#000'; g.fillRect(0, 0, w, w); g.translate(c, c);
+    g.strokeStyle = 'rgba(80,170,255,.55)'; g.lineWidth = Math.max(1, w / 512);
+    for (let k = 1; k <= 7; k++) { g.beginPath(); g.arc(0, 0, c * (.22 + k * .1), 0, Math.PI * 2); g.stroke(); }
+    for (let i = 0; i < 48; i++) {
+      const a = i / 48 * Math.PI * 2;
+      g.beginPath(); g.moveTo(Math.cos(a) * c * .32, Math.sin(a) * c * .32); g.lineTo(Math.cos(a) * c * .95, Math.sin(a) * c * .95); g.stroke();
+    }
+  });
+}
+
+/* ---------- Слабкий пристрій? (телефон, мало ядер чи пам'яті) ---------- */
+export function detectLite() {
+  const q = new URLSearchParams(location.search).get('q');   // ?q=lite / ?q=max — ручне перемикання для перевірки
+  if (q === 'lite') return true;
+  if (q === 'max') return false;
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  const small = Math.min(screen.width, screen.height) <= 900 || innerWidth <= 900;
+  const cores = navigator.hardwareConcurrency || 8, mem = navigator.deviceMemory || 8;
+  return (coarse && small) || innerWidth <= 900 || cores <= 4 || mem <= 4;
+}
+
 /* ---------- Сцена ---------- */
-export function initOffice(canvas, { stageEl, assistantEl } = {}) {
-  const isMobile = matchMedia('(max-width: 900px)').matches;
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, powerPreference: 'high-performance' });
+export function initOffice(canvas, { stageEl, assistantEl, lite = detectLite() } = {}) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lite, powerPreference: lite ? 'default' : 'high-performance' });
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = .92;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  let maxDpr = isMobile ? 1.5 : 2;
+  const maxDpr = lite ? 1.25 : 2;
   renderer.setPixelRatio(Math.min(devicePixelRatio, maxDpr));
+  const Q = lite ? .6 : 1;   // множник деталізації
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x07152b, 0.0065);
@@ -184,7 +232,7 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
 
   /* Зірки */
   {
-    const r = rand(3), n = 1400, pos = new Float32Array(n * 3);
+    const r = rand(3), n = Math.round(1400 * Q), pos = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
       const th = r() * Math.PI * 2, ph = Math.acos(0.15 + r() * 0.85);
       pos.set([Math.sin(ph) * Math.cos(th) * 500, Math.cos(ph) * 500, Math.sin(ph) * Math.sin(th) * 500], i * 3);
@@ -209,7 +257,7 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
       };
       return m;
     });
-    const r = rand(42), per = 170;
+    const r = rand(42), per = Math.round(170 * Q);
     const dummy = new THREE.Object3D();
     mats.forEach((m, k) => {
       const im = new THREE.InstancedMesh(box, m, per);
@@ -270,7 +318,7 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
     const flood = new THREE.PointLight(0xffa860, 900, 80, 2); flood.position.set(Math.sin(ca) * (cr - 18), CITY_Y + 20, -Math.cos(ca) * (cr - 18)); city.add(flood);
 
     // Вуличні вогні внизу
-    const n = 2600, pos = new Float32Array(n * 3), colA = new Float32Array(n * 3);
+    const n = Math.round(2600 * Q), pos = new Float32Array(n * 3), colA = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
       const a = (r() * 2 - 1) * 1.9, rad = 36 + r() * 260;
       pos.set([Math.sin(a) * rad, CITY_Y + .5, -Math.cos(a) * rad], i * 3);
@@ -292,7 +340,8 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
   {
     // глянцева підлога
     const floor = new THREE.Mesh(new THREE.CircleGeometry(R_WIN + 1, 96),
-      new THREE.MeshStandardMaterial({ color: 0x060b14, metalness: .85, roughness: .22, envMap: envTex, envMapIntensity: .35 }));
+      new THREE.MeshStandardMaterial({ color: 0x060b14, metalness: .88, roughness: .18, envMap: envTex, envMapIntensity: .4,
+        emissive: 0x4f9fe0, emissiveMap: floorTexture(lite ? 256 : 512), emissiveIntensity: .5 }));
     floor.rotation.x = -Math.PI / 2; office.add(floor);
     // світлові лінії в підлозі
     [6.5, 10, 14].forEach((r, i) => {
@@ -340,12 +389,55 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
       b.position.set(Math.sin(a) * (R_WIN / 2 + 2.5), WIN_H + .2, -Math.cos(a) * (R_WIN / 2 + 2.5)); b.rotation.y = -a;
       office.add(b);
     }
+
+    const dummy = new THREE.Object3D();
+    const place = (im, i, a, rad, y, rx = 0) => {
+      dummy.position.set(Math.sin(a) * rad, y, -Math.cos(a) * rad); dummy.rotation.set(rx, -a, 0, 'YXZ');
+      dummy.updateMatrix(); im.setMatrixAt(i, dummy.matrix);
+    };
+    // світлові панелі стелі між балками (одна InstancedMesh)
+    {
+      const g = new THREE.PlaneGeometry(1.6, 4.2); g.rotateX(Math.PI / 2);
+      const im = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial({ color: 0x5f9fd0, transparent: true, opacity: .55, side: THREE.DoubleSide }), 12);
+      for (let i = 0; i < 12; i++) place(im, i, (i + .5) / 12 * Math.PI * 2, 13.2, WIN_H + .45);
+      office.add(im);
+    }
+    // радіальні світлові доріжки в підлозі, що м'яко пульсують
+    {
+      const g = new THREE.PlaneGeometry(.06, 7); g.rotateX(-Math.PI / 2);
+      const m = new THREE.MeshBasicMaterial({ color: CYAN_L, transparent: true, opacity: .35, blending: THREE.AdditiveBlending, depthWrite: false });
+      const n = 10, im = new THREE.InstancedMesh(g, m, n);
+      for (let i = 0; i < n; i++) place(im, i, -1.3 + 2.6 * i / (n - 1), 14.5, .012);
+      office.add(im); office.userData.floorStrips = m;
+    }
+    // дугові пульти з екранами ліворуч і праворуч від платформи (3 InstancedMesh-и на всі пульти)
+    {
+      const R = 9.6, per = 4, angs = [];
+      [-1, 1].forEach(s => { for (let i = 0; i < per; i++) angs.push(s * (.44 + i * .2)); });
+      const n = angs.length;
+      const desk = new THREE.InstancedMesh(new THREE.BoxGeometry(1.95, 1.05, .8).translate(0, .525, 0), metal, n);
+      const edge = new THREE.InstancedMesh(new THREE.BoxGeometry(1.95, .035, .04).translate(0, 1.07, .4), stripCyan, n);
+      const scrG = new THREE.PlaneGeometry(1.7, .95).translate(0, .5, 0);
+      const scr = [0, 1].map(k => {
+        const map = screenTexture(k);
+        return new THREE.InstancedMesh(scrG, new THREE.MeshBasicMaterial({ map, color: 0xb8dcff, transparent: true, opacity: .88, side: THREE.DoubleSide, depthWrite: false }), n / 2);
+      });
+      const gold = new THREE.Color(0xffd9a0), cy = new THREE.Color(0xc4e8ff);
+      angs.forEach((a, i) => {
+        place(desk, i, a, R, 0); place(edge, i, a, R, 0);
+        const im = scr[i % 2], j = i >> 1;
+        place(im, j, a, R + .15, 1.2, -.32);
+        im.setColorAt(j, i % 3 === 0 ? gold : cy);
+      });
+      office.add(desk, edge, ...scr);
+      office.userData.screens = scr.map(s => s.material.map);
+    }
   }
 
   /* ===== Голографічна платформа ===== */
   const holo = new THREE.Group(); scene.add(holo);
   const PLAT_R = 3.6, PLAT_Y = .5;
-  const platTex = platformTexture();
+  const platTex = platformTexture(lite ? 512 : 1024);
   {
     const base = new THREE.Mesh(new THREE.CylinderGeometry(PLAT_R, PLAT_R + .4, PLAT_Y, 96), metal);
     base.position.y = PLAT_Y / 2; holo.add(base);
@@ -399,11 +491,43 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
     holo.add(new THREE.Points(wg, wm)); holo.userData.winMat = wm;
   }
 
+  // Голографічні стовпи даних за пультами
+  {
+    const H = 7.5;
+    const mat = new THREE.ShaderMaterial({
+      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `varying vec2 vUv; varying float vRim;
+        void main(){ vUv = uv; vec4 mv = modelViewMatrix*vec4(position,1.);
+          vRim = 1. - abs(dot(normalize(normalMatrix*normal), normalize(-mv.xyz))); gl_Position = projectionMatrix*mv; }`,
+      fragmentShader: `uniform float uTime; varying vec2 vUv; varying float vRim;
+        void main(){
+          float fade = smoothstep(0., .08, vUv.y) * (1. - smoothstep(.55, 1., vUv.y));
+          float bands = step(.55, fract(vUv.y * 26. - uTime * .6)) * .6 + .25;
+          float cols = .55 + .45 * step(.5, fract(vUv.x * 12.));
+          float a = fade * (bands * cols * .2 + pow(vRim, 3.) * .7);
+          gl_FragColor = vec4(vec3(.35,.78,1.) * a, a);
+        }`
+    });
+    const tube = new THREE.CylinderGeometry(.42, .42, H, lite ? 12 : 20, 1, true).translate(0, H / 2, 0);
+    const ringG = new THREE.TorusGeometry(.62, .025, 6, lite ? 32 : 48);
+    const baseG = new THREE.CylinderGeometry(.62, .72, .18, lite ? 12 : 20).translate(0, .09, 0);
+    const rings = [];
+    [[-.95, 14], [-.3, 14.5], [.3, 14.5], [.95, 14]].forEach(([a, rad], i) => {
+      const p = new THREE.Group(); p.position.set(Math.sin(a) * rad, 0, -Math.cos(a) * rad);
+      p.add(new THREE.Mesh(baseG, metal), new THREE.Mesh(tube, mat));
+      const ring = new THREE.Mesh(ringG, i % 2 ? stripGold : stripCyan); ring.rotation.x = Math.PI / 2;
+      ring.userData.phase = i * 1.7; p.add(ring); rings.push(ring);
+      holo.add(p);
+    });
+    holo.userData.pillarMat = mat; holo.userData.pillarRings = rings;
+  }
+
   /* ===== Планета ===== */
   const GLOBE_Y = 6.4, GR = 2.5;
   const globe = new THREE.Group(); globe.position.y = GLOBE_Y; scene.add(globe);
-  const tex = planetTextures();
-  const earth = new THREE.Mesh(new THREE.SphereGeometry(GR, 128, 64),
+  const tex = lite ? planetTextures(512, 256) : planetTextures();
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(GR, lite ? 72 : 128, lite ? 36 : 64),
     new THREE.MeshStandardMaterial({ map: tex.map, bumpMap: tex.bump, bumpScale: .9, roughness: .62, metalness: .05, emissive: 0xffffff, emissiveMap: tex.lights, emissiveIntensity: 1.1 }));
   const sunDirView = { value: new THREE.Vector3(-1, .6, 1).normalize() };
   earth.material.onBeforeCompile = (sh) => {
@@ -413,8 +537,8 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
        totalEmissiveRadiance *= smoothstep(.25, -.3, dot(normal, uSunDir));`);
   };
   earth.rotation.z = .41; globe.add(earth);
-  const clouds = new THREE.Mesh(new THREE.SphereGeometry(GR * 1.012, 96, 48),
-    new THREE.MeshStandardMaterial({ map: cloudTexture(), transparent: true, opacity: .5, depthWrite: false, roughness: 1 }));
+  const clouds = new THREE.Mesh(new THREE.SphereGeometry(GR * 1.012, lite ? 56 : 96, lite ? 28 : 48),
+    new THREE.MeshStandardMaterial({ map: lite ? cloudTexture(256, 128) : cloudTexture(), transparent: true, opacity: .5, depthWrite: false, roughness: 1 }));
   clouds.rotation.z = .41; globe.add(clouds);
   // атмосфера
   const atmo = new THREE.Mesh(new THREE.SphereGeometry(GR * 1.2, 64, 32), new THREE.ShaderMaterial({
@@ -470,7 +594,7 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
   mkOrbit(GR * 1.55, .018, CYAN_L, .32, -.28);
   mkOrbit(GR * 1.78, .012, 0xffc56e, -.2, .22);
   {
-    const r = rand(5), n = 2200, pos = new Float32Array(n * 3);
+    const r = rand(5), n = Math.round(2200 * Q), pos = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
       const a = r() * Math.PI * 2, rr = GR * (1.32 + r() * .14);
       pos.set([Math.cos(a) * rr, (r() - .5) * .05, Math.sin(a) * rr], i * 3);
@@ -511,12 +635,14 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
   const platLight = new THREE.PointLight(CYAN, 30, 22, 2); platLight.position.set(0, 1.6, 0); scene.add(platLight);
   const goldLight = new THREE.PointLight(GOLD, 35, 26, 2); goldLight.position.set(6, WIN_H - 2, -6); scene.add(goldLight);
 
-  /* ===== Постобробка ===== */
-  const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), .62, .5, .82);
-  composer.addPass(bloom);
-  composer.addPass(new OutputPass());
+  /* ===== Постобробка (на слабких пристроях bloom не створюємо) ===== */
+  let composer = null;
+  if (!lite) {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new UnrealBloomPass(new THREE.Vector2(512, 512), .62, .5, .82));
+    composer.addPass(new OutputPass());
+  }
 
   /* ===== Камера і розмір ===== */
   const target = new THREE.Vector3(0, 4.6, 0);
@@ -525,8 +651,7 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
   function resize() {
     const w = innerWidth, h = innerHeight;
     renderer.setSize(w, h, false);
-    composer.setSize(w, h);
-    bloom.resolution.set(w / 2, h / 2);
+    composer && composer.setSize(w, h);
     camera.aspect = w / h;
     const portrait = w / h < 1;
     camera.fov = portrait ? 58 : 40;
@@ -542,18 +667,33 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
       camera.setViewOffset(w, h, -(cx - w / 2), -(cy - h / 2) * (portrait ? 1 : .6), w, h);
     }
     camera.updateProjectionMatrix();
+    dirty = true; wake();
   }
   addEventListener('resize', resize);
   addEventListener('pointermove', e => { pointer.x = e.clientX / innerWidth * 2 - 1; pointer.y = e.clientY / innerHeight * 2 - 1; });
-  resize();
 
-  /* ===== Анімація ===== */
+  /* ===== Анімація =====
+     ECO: менше ефектів; lite: ліміт 30 к/с; пауза: вкладка прихована або сцену закриває панель розділу */
   const clock = new THREE.Clock();
-  let eco = false, running = true;
-  function frame() {
-    if (!running) return;
-    requestAnimationFrame(frame);
-    if (document.hidden) return;
+  let eco = false, running = true, paused = false, dirty = true, raf = 0, last = 0;
+  const minFrame = lite ? 1000 / 31 : 0;
+  function wake() { if (running && !raf && !document.hidden) raf = requestAnimationFrame(frame); }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { clock.getDelta(); wake(); } });
+  function aim(t) {   // м'який паралакс
+    pointer.sx += (pointer.x - pointer.sx) * .04; pointer.sy += (pointer.y - pointer.sy) * .04;
+    camera.position.set(camBase.x + pointer.sx * 1.2 + Math.sin(t * .1) * .4, camBase.y - pointer.sy * .6, camBase.z);
+    camera.lookAt(target);
+    camera.updateMatrixWorld();
+    sunDirView.value.copy(sun.position).normalize().transformDirection(camera.matrixWorldInverse);
+  }
+  function render() { if (eco || !composer) renderer.render(scene, camera); else composer.render(); }
+  function frame(now) {
+    raf = 0;
+    if (!running || document.hidden) return;              // поновить visibilitychange
+    if (paused) { if (dirty) { aim(clock.elapsedTime); render(); dirty = false; } return; }  // статичний кадр під панеллю
+    raf = requestAnimationFrame(frame);
+    if (minFrame && now - last < minFrame) return;
+    last = now; dirty = false;
     const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime;
     const sp = eco ? .35 : 1;
     earth.rotation.y += dt * .06 * sp;
@@ -576,15 +716,15 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
     }
     pa.needsUpdate = true;
     city.userData.beacon.material.opacity = (Math.sin(t * 3) > 0 ? 1 : .15);
-    // м'який паралакс
-    pointer.sx += (pointer.x - pointer.sx) * .04; pointer.sy += (pointer.y - pointer.sy) * .04;
-    camera.position.set(camBase.x + pointer.sx * 1.2 + Math.sin(t * .1) * .4, camBase.y - pointer.sy * .6, camBase.z);
-    camera.lookAt(target);
-    camera.updateMatrixWorld();
-    sunDirView.value.copy(sun.position).normalize().transformDirection(camera.matrixWorldInverse);
-    if (eco) renderer.render(scene, camera); else composer.render();
+    // нові деталі інтер'єру
+    office.userData.screens.forEach((m, k) => { m.offset.x = (m.offset.x + dt * (.025 + k * .015) * sp) % 1; });
+    office.userData.floorStrips.opacity = .22 + .14 * Math.sin(t * 1.4);
+    holo.userData.pillarMat.uniforms.uTime.value = t * sp;
+    holo.userData.pillarRings.forEach(r => { r.position.y = 1.2 + 2.6 * (.5 + .5 * Math.sin(t * .45 * sp + r.userData.phase)); });
+    aim(t);
+    render();
   }
-  frame();
+  resize();
 
   return {
     setEco(v) {
@@ -592,6 +732,8 @@ export function initOffice(canvas, { stageEl, assistantEl } = {}) {
       renderer.setPixelRatio(Math.min(devicePixelRatio, v ? 1 : maxDpr));
       resize();
     },
+    setPaused(v) { paused = v; if (!v) clock.getDelta(); dirty = true; wake(); },
+    lite,
     resize,
     stop() { running = false; }
   };

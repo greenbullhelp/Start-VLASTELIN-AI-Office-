@@ -55,8 +55,8 @@ function sculpt(v) {
   return new THREE.Vector3(x * sx, y * sy, z * sz).addScaledVector(v, d);
 }
 
-function headGeometry() {
-  const g = new THREE.SphereGeometry(1, 256, 200);
+function headGeometry(q = 1) {
+  const g = new THREE.SphereGeometry(1, Math.round(256 * q), Math.round(200 * q));
   const p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).normalize(); const s = sculpt(v); p.setXYZ(i, s.x, s.y, s.z); }
   g.computeVertexNormals();
@@ -69,10 +69,10 @@ function surfaceTube(dirs, offset, radius) {
 }
 
 /* ================= ТОРС ================= */
-function bodyGeometry() {
+function bodyGeometry(q = 1) {
   const prof = [[.001, -5.6], [2.05, -5.6], [2.12, -4.6], [2.22, -3.5], [2.25, -2.95], [2.1, -2.5], [1.6, -2.18], [1.05, -2.02], [.66, -1.88],
     [.52, -1.6], [.49, -1.3], [.46, -1.05], [.37, -.84], [.001, -.8]].map(([r, y]) => new THREE.Vector2(r, y));
-  const g = new THREE.LatheGeometry(new THREE.SplineCurve(prof).getPoints(140), 220, Math.PI);
+  const g = new THREE.LatheGeometry(new THREE.SplineCurve(prof).getPoints(Math.round(140 * q)), Math.round(220 * q), Math.PI);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {   // груди сплющені спереду-назад, шия майже кругла
     const y = p.getY(i), k = .92 - .32 * smooth(-1.75, -2.35, y);
@@ -144,9 +144,10 @@ function glowSprite(rgb) {
   return new THREE.Sprite(new THREE.SpriteMaterial({ map: t, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true }));
 }
 
-export function initAssistant(canvas) {
+export function initAssistant(canvas, { lite = false } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const maxDpr = lite ? 1.5 : 2, Q = lite ? .6 : 1;   // на слабких пристроях — менше пікселів і полігонів
+  renderer.setPixelRatio(Math.min(devicePixelRatio, maxDpr));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -161,9 +162,9 @@ export function initAssistant(canvas) {
   const glowGold = new THREE.MeshBasicMaterial({ color: 0xffc870 });
 
   const bust = new THREE.Group(); scene.add(bust);
-  const body = new THREE.Mesh(bodyGeometry(), chrome); bust.add(body);
+  const body = new THREE.Mesh(bodyGeometry(Q), chrome); bust.add(body);
   const head = new THREE.Group(); head.position.y = -.02; head.scale.setScalar(1.1); bust.add(head);
-  head.add(new THREE.Mesh(headGeometry(), chrome));
+  head.add(new THREE.Mesh(headGeometry(Q), chrome));
 
   // Очі — мигдалеподібні лінзи з сяйвом
   const eyes = [];
@@ -222,9 +223,19 @@ export function initAssistant(canvas) {
   let speaking = 0, listening = false, thinking = false, eco = false, nextBlink = 2, blink = 0;
   const clock = new THREE.Clock();
   const cCyan = new THREE.Color(0xc8f4ff), cGold = new THREE.Color(0xffd27a), cThink = new THREE.Color(0xd9b8ff);
-  (function loop() {
-    requestAnimationFrame(loop);
-    if (document.hidden) return;
+  // цикл зупиняється, коли вкладка прихована, аватар поза екраном або його закриває панель розділу
+  let paused = false, onScreen = true, raf = 0, last = 0;
+  const minFrame = lite ? 1000 / 31 : 0;
+  const active = () => !paused && onScreen && !document.hidden;
+  function wake() { if (!raf && active()) { clock.getDelta(); raf = requestAnimationFrame(loop); } }
+  document.addEventListener('visibilitychange', wake);
+  if ('IntersectionObserver' in window) new IntersectionObserver(es => { onScreen = es[es.length - 1].isIntersecting; wake(); }).observe(canvas);
+  function loop(now) {
+    raf = 0;
+    if (!active()) return;
+    raf = requestAnimationFrame(loop);
+    if (minFrame && now - last < minFrame) return;
+    last = now;
     const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime, sp = eco ? .4 : 1;
     ptr.sx += (ptr.x - ptr.sx) * .05; ptr.sy += (ptr.y - ptr.sy) * .05;
     head.rotation.y = Math.sin(t * .33 * sp) * .2 + ptr.sx * .4 + (thinking ? Math.sin(t * 1.5) * .08 : 0);
@@ -246,13 +257,15 @@ export function initAssistant(canvas) {
     coreGlow.material.opacity = .55 + .3 * Math.sin(t * 2) + talk;
     core.rotation.z += dt * (thinking ? 2 : .3);
     renderer.render(scene, camera);
-  })();
+  }
+  wake();
 
   return {
     speak(sec = 3) { speaking = Math.min(4, sec / 2); },
     listen(v) { listening = v; },
     think(v) { thinking = v; },
     setBig(v) { big = v; setTimeout(frame, 30); },
-    setEco(v) { eco = v; renderer.setPixelRatio(Math.min(devicePixelRatio, v ? 1 : 2)); frame(); }
+    setEco(v) { eco = v; renderer.setPixelRatio(Math.min(devicePixelRatio, v ? 1 : maxDpr)); frame(); },
+    setPaused(v) { paused = v; wake(); }
   };
 }

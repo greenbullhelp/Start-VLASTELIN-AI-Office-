@@ -151,6 +151,13 @@
 
   <div class="backdrop" id="backdrop"></div>
 
+  <!-- ===== ПАНЕЛЬ РОЗДІЛУ (відкривається з навігації, поверх 3D-сцени) ===== -->
+  <div class="sp-dim" id="spDim" aria-hidden="true"></div>
+  <section class="hud spanel" id="spanel" role="region" aria-labelledby="spTitle" hidden>
+    <div class="hud-head sp-head"><span id="spTitle">—</span><span class="head-r"><code id="spCode"></code><button class="icon-btn sp-close" id="spClose" aria-label="Закрити розділ" title="Закрити (Esc)">×</button></span></div>
+    <div class="sp-body" id="spBody"></div>
+  </section>
+
   <!-- ===== ДОК ===== -->
   <footer class="dock">
     <button class="hud action gold" id="dVoice"><svg viewBox="0 0 24 24"><path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/></svg>Голосова команда</button>

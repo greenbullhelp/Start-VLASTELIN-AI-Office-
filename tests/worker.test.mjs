@@ -49,3 +49,31 @@ r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'u
 const origErr = console.error; console.error = () => {};
 r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), { ...env, ANTHROPIC_API_KEY: 'мій ключ' }); j = await r.json(); ok(r.status === 500 && j.error.includes('формат'), 'bad key reported');
 console.error = origErr;
+// ===== Shared storage (/state) with an in-memory D1 stand-in =====
+function memD1() {
+  const rows = new Map();
+  const stmt = (sql, args = []) => ({
+    bind: (...a) => stmt(sql, a),
+    run: async () => {
+      if (sql.startsWith('INSERT')) { const [k, v, t] = args; const cur = rows.get(k); if (!cur || t >= cur.t) rows.set(k, { v, t }); }
+      return { success: true };
+    },
+    all: async () => ({ results: [...rows].map(([k, r]) => ({ k, ...r })) }),
+    first: async () => { const r = rows.get(args[0]); return r ? { ...r } : null; }
+  });
+  return { prepare: sql => stmt(sql), rows };
+}
+const DB = memD1(); const senv = { ...env, DB };
+const st = (method, body, h = { 'X-Access-Code': 'secret' }) => new Request('https://w.dev/state', { method, headers: { Origin: O, 'Content-Type': 'application/json', ...h }, body: body ? JSON.stringify(body) : undefined });
+r = await worker.fetch(st('GET', null, { 'X-Access-Code': 'bad' }), senv); ok(r.status === 401, 'state requires access code');
+r = await worker.fetch(st('GET'), senv); j = await r.json(); ok(r.status === 200 && Object.keys(j.state).length === 0, 'empty state');
+r = await worker.fetch(st('PUT', { key: 'projects', v: '[{"name":"A","progress":5}]', t: 1000 }), senv); j = await r.json();
+ok(r.status === 200 && j.applied && j.t === 1000, 'state saved');
+r = await worker.fetch(st('PUT', { key: 'projects', v: '[{"name":"old"}]', t: 900 }), senv); j = await r.json();
+ok(j.applied === false && j.t === 1000 && j.v.includes('"A"'), 'older write rejected, newer value returned');
+r = await worker.fetch(st('GET'), senv); j = await r.json(); ok(j.state.projects.t === 1000 && JSON.parse(j.state.projects.v)[0].name === 'A', 'state read back');
+r = await worker.fetch(st('PUT', { key: 'secrets', v: '{}', t: 5 }), senv); ok(r.status === 400, 'unknown key rejected');
+r = await worker.fetch(st('PUT', { key: 'events', v: 'not json', t: 5 }), senv); ok(r.status === 400, 'non-JSON rejected');
+r = await worker.fetch(st('PUT', { key: 'events', v: JSON.stringify('x'.repeat(300 * 1024)), t: 5 }), senv); ok(r.status === 413, 'oversized rejected');
+r = await worker.fetch(st('GET'), env); ok(r.status === 503, 'no DB binding -> honest 503');
+r = await worker.fetch(new Request('https://w.dev/health', { headers: { Origin: O } }), senv); j = await r.json(); ok(j.storage === true, 'health reports storage');

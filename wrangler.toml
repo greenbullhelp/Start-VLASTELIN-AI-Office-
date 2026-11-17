@@ -14,3 +14,9 @@ DAILY_BUDGET_USD = "0.50"
 [[kv_namespaces]]
 binding = "BUDGET"
 id = "3c65bce512414120bf7bde39b2f2bdc4"
+
+# Shared office data (projects, events, tasks/windows, chat history) for all devices.
+[[d1_databases]]
+binding = "DB"
+database_name = "vlastelin"
+database_id = "545dc607-26a5-43c7-bdbd-3568830ce815"

@@ -54,6 +54,37 @@ function cleanImages(list) {
 }
 const today = () => new Date().toISOString().slice(0, 10);
 
+/* ====== Спільне сховище (D1): одна JSON-колекція на ключ, «перемагає новіший» за часом зміни ====== */
+const STATE_KEYS = ['projects', 'events', 'ws', 'history'];
+const MAX_STATE_BYTES = 256 * 1024;
+let schemaReady = false;
+async function ensureSchema(db) {
+  if (schemaReady) return;
+  await db.prepare('CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v TEXT NOT NULL, t INTEGER NOT NULL)').run();
+  schemaReady = true;
+}
+async function readState(db) {
+  await ensureSchema(db);
+  const { results = [] } = await db.prepare('SELECT k, v, t FROM state').all();
+  const state = {};
+  for (const r of results) if (STATE_KEYS.includes(r.k)) state[r.k] = { v: r.v, t: r.t };
+  return state;
+}
+async function writeState(db, body) {
+  const k = body && body.key, v = body && body.v, t = Number(body && body.t);
+  if (!STATE_KEYS.includes(k)) return { status: 400, data: { error: 'Невідомий ключ даних' } };
+  if (typeof v !== 'string' || !Number.isFinite(t) || t <= 0) return { status: 400, data: { error: 'Некоректні дані' } };
+  if (new TextEncoder().encode(v).length > MAX_STATE_BYTES) return { status: 413, data: { error: 'Забагато даних для одного розділу' } };
+  try { JSON.parse(v); } catch { return { status: 400, data: { error: 'Дані мають бути JSON' } }; }
+  await ensureSchema(db);
+  // Last write wins: an older change never overwrites a newer one.
+  await db.prepare('INSERT INTO state (k, v, t) VALUES (?1, ?2, ?3) ON CONFLICT(k) DO UPDATE SET v = excluded.v, t = excluded.t WHERE excluded.t >= state.t')
+    .bind(k, v, t).run();
+  const row = await db.prepare('SELECT v, t FROM state WHERE k = ?1').bind(k).first();
+  const applied = row && row.t === t && row.v === v;
+  return { status: 200, data: applied ? { applied: true, t } : { applied: false, t: row.t, v: row.v } };
+}
+
 // Standing rules agreed with the owner (17.11.2026). They guide the model; hard limits
 // (which tools exist, which tokens the worker holds) must enforce the same rules technically.
 const RULES = [
@@ -165,7 +196,7 @@ export default {
     const okOrigin = allowed.includes(origin);
     const cors = {
       'Access-Control-Allow-Origin': okOrigin ? origin : allowed[0],
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-Access-Code',
       'Vary': 'Origin'
     };
@@ -174,11 +205,25 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'GET' && (url.pathname === '/' || url.pathname.endsWith('/health'))) {
       return json({ ok: true, service: 'vlastelin-agent', model: env.MODEL || DEFAULT_MODEL, modelFast: env.MODEL_FAST || DEFAULT_FAST,
-        budget: Boolean(env.BUDGET), protected: Boolean(env.ACCESS_CODE), configured: Boolean(env.ANTHROPIC_API_KEY) }, 200, cors);
+        budget: Boolean(env.BUDGET), storage: Boolean(env.DB), protected: Boolean(env.ACCESS_CODE), configured: Boolean(env.ANTHROPIC_API_KEY) }, 200, cors);
     }
-    if (request.method !== 'POST') return json({ error: 'Метод не підтримується' }, 405, cors);
+    const isState = url.pathname.endsWith('/state');
+    if (!(isState && (request.method === 'GET' || request.method === 'PUT')) && request.method !== 'POST') return json({ error: 'Метод не підтримується' }, 405, cors);
     if (!okOrigin) return json({ error: 'Доступ дозволено лише з сайту офісу' }, 403, cors);
     if (env.ACCESS_CODE && request.headers.get('X-Access-Code') !== env.ACCESS_CODE) return json({ error: 'Невірний код доступу' }, 401, cors);
+
+    if (isState) {
+      if (!env.DB) return json({ error: 'Сховище не підключене на сервері' }, 503, cors);
+      try {
+        if (request.method === 'GET') return json({ state: await readState(env.DB), now: Date.now() }, 200, cors);
+        let b; try { b = await request.json(); } catch { return json({ error: 'Некоректний JSON' }, 400, cors); }
+        const r = await writeState(env.DB, b);
+        return json(r.data, r.status, cors);
+      } catch (e) {
+        console.error('State storage error:', e && e.message);
+        return json({ error: 'Помилка сховища' }, 500, cors);
+      }
+    }
     if (!env.ANTHROPIC_API_KEY) return json({ error: 'На сервері не задано ANTHROPIC_API_KEY' }, 500, cors);
     // Copy-paste often adds spaces/newlines; such a header value makes fetch throw before any request is sent.
     const apiKey = cleanKey(env.ANTHROPIC_API_KEY);

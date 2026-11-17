@@ -17,9 +17,19 @@ const CONFIG = {
 
 /* ====== helpers ====== */
 const $ = id => document.getElementById(id);
+// Колекції, що синхронізуються між пристроями через сервер (крок 1 «Апгрейду»).
+const SYNC_KEYS = { vl_projects: "projects", vl_events: "events", vl_ws: "ws", vl_history: "history" };
+let applyingRemote = false, sync = null;   // sync створюється нижче, коли всі колекції вже оголошені
 const store = {
   get(k, f) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch (e) { return f; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  set(k, v) {
+    try {
+      const s = JSON.stringify(v), old = localStorage.getItem(k);
+      localStorage.setItem(k, s);
+      // Справжня зміна користувача (не перший запис значень за замовчуванням і не дані з сервера) → у чергу на синхронізацію.
+      if (SYNC_KEYS[k] && old !== null && old !== s && !applyingRemote && sync) sync.touch(SYNC_KEYS[k]);
+    } catch (e) {}
+  }
 };
 // Cache-busting: index.html loads app.js?v=…; pass the same version on to the 3D modules.
 const VER = new URL(import.meta.url).search;
@@ -572,6 +582,7 @@ $("setSave").onclick = async () => {
   readSettings();
   if (agent.url && !agentReady()) { $("setNote").className = "set-note bad"; $("setNote").textContent = "Адреса має починатися з https://"; return; }
   store.set("vl_agent", agent); closeSettings(); toast("Налаштування збережено");
+  sync.run(true);
   const r = await pingAgent(); setAiState(r.ok);
   say(r.ok ? `<b>AI-агент підключений.</b><br>Чим можу допомогти?` : `<b>Налаштування збережено.</b><br><span class="muted">${esc(r.msg)}</span>`);
 };
@@ -586,7 +597,8 @@ const tile = (label, value, sub = "") => `<div class="tile"><small>${label}</sma
 const statusRows = () => [
   ["Інтернет", netOk ? "ok" : "bad", netOk ? "є з'єднання" : "немає з'єднання"],
   ["GitHub API", !checked ? "" : gitOk ? "ok" : "bad", !checked ? "перевірка…" : gitOk ? "доступний" : "недоступний"],
-  ["AI-агент", aiOnline ? "ok" : !checked ? "" : agentReady() ? "bad" : "warn", aiOnline ? "онлайн" : !checked ? "перевірка…" : agentReady() ? "немає зв'язку" : "не налаштований"]
+  ["AI-агент", aiOnline ? "ok" : !checked ? "" : agentReady() ? "bad" : "warn", aiOnline ? "онлайн" : !checked ? "перевірка…" : agentReady() ? "немає зв'язку" : "не налаштований"],
+  ["Хмара (спільні дані)", !sync ? "" : sync.state === "ok" ? "ok" : sync.state === "bad" ? "bad" : "warn", sync ? esc(sync.msg) : "перевірка…"]
 ].map(([n, st, t]) => `<li><span class="dot ${st}"></span><span>${n}</span><span class="muted">${t}</span></li>`).join("");
 const aiTxt = () => aiOnline ? "Онлайн" : !checked ? "…" : agentReady() ? "Немає зв'язку" : "Не налаштований";
 const note = t => `<p class="sp-note">${t}</p>`;
@@ -805,3 +817,80 @@ $("spBody").addEventListener("input", e => {   // повзунок: оновлю
   p.progress = +el.value; $("spPv" + el.dataset.i).textContent = p.progress + "%"; renderProjects(true);
 });
 route();
+
+/* ====== синхронізація між пристроями (крок 1 «Апгрейду») ======
+   Кожна колекція — окремий JSON на сервері (D1) з часом зміни; перемагає новіша зміна.
+   Перед першим прийомом даних із сервера локальна копія зберігається як vl_backup_<ключ>. */
+const SYNC_DEFAULTS = { vl_ws: {}, vl_history: [] };
+for (const [k, d] of Object.entries(SYNC_DEFAULTS)) { try { if (localStorage.getItem(k) === null) localStorage.setItem(k, JSON.stringify(d)); } catch (e) {} }
+const LS_OF = Object.fromEntries(Object.entries(SYNC_KEYS).map(([ls, key]) => [key, ls]));
+function applyRemote(key, value) {
+  applyingRemote = true;
+  try {
+    if (key === "projects" && Array.isArray(value)) { projects = value; renderProjects(); }
+    else if (key === "events" && Array.isArray(value)) { events = value; renderEvents(); }
+    else if (key === "ws" && value && typeof value === "object") { ws = value; saveWs(); if (section !== "home") renderPanel(); }
+    else if (key === "history" && Array.isArray(value)) { history = value; saveHistory(); renderChat(); }
+  } finally { applyingRemote = false; }
+}
+sync = {
+  meta: store.get("vl_sync", {}),   // { key: час останньої відомої зміни }
+  dirty: new Set(), timer: 0, busy: false, state: "off", msg: "Не налаштовано", at: 0,
+  saveMeta() { try { localStorage.setItem("vl_sync", JSON.stringify(this.meta)); } catch (e) {} },
+  setState(st, msg) { this.state = st; this.msg = msg; refreshPanel("business", "dev"); },
+  touch(key) {
+    this.meta[key] = Date.now(); this.saveMeta(); this.dirty.add(key);
+    clearTimeout(this.timer); this.timer = setTimeout(() => this.run(), 800);
+  },
+  async api(method, body) {
+    const r = await fetch(agent.url.replace(/\/+$/, "") + "/state", {
+      method, headers: { "Content-Type": "application/json", "X-Access-Code": agent.code || "" },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Помилка ${r.status}`);
+    return j;
+  },
+  async pull() {
+    const { state = {} } = await this.api("GET");
+    for (const key of Object.values(SYNC_KEYS)) {
+      const s = state[key], mine = this.meta[key] || 0;
+      if (s && s.t > mine) {
+        if (key === "history" && pending) continue;   // не підміняємо розмову посеред відповіді
+        let value; try { value = JSON.parse(s.v); } catch (e) { continue; }
+        if (!mine) { try { const cur = localStorage.getItem(LS_OF[key]); if (cur && cur !== s.v) localStorage.setItem("vl_backup_" + key, cur); } catch (e) {} }
+        applyRemote(key, value); this.meta[key] = s.t;
+      } else if (!s || s.t < mine) {
+        if (!mine) this.meta[key] = Date.now();   // перше вивантаження даних цього пристрою
+        this.dirty.add(key);
+      }
+    }
+    this.saveMeta();
+  },
+  async push() {
+    for (const key of [...this.dirty]) {
+      const v = localStorage.getItem(LS_OF[key]); if (v === null) { this.dirty.delete(key); continue; }
+      const j = await this.api("PUT", { key, v, t: this.meta[key] || Date.now() });
+      this.dirty.delete(key);
+      if (j.applied === false && j.v) { try { applyRemote(key, JSON.parse(j.v)); } catch (e) {} this.meta[key] = j.t; }
+    }
+    this.saveMeta();
+  },
+  async run(full = false) {
+    if (!agentReady()) { this.setState("off", "Не налаштовано (потрібен AI-агент)"); return; }
+    if (this.busy) { clearTimeout(this.timer); this.timer = setTimeout(() => this.run(full), 1500); return; }
+    this.busy = true;
+    try {
+      if (full) await this.pull();
+      await this.push();
+      this.at = Date.now(); this.setState("ok", "Синхронізовано " + new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }));
+    } catch (e) {
+      this.setState("bad", e.message || "Немає зв'язку");
+      clearTimeout(this.timer); this.timer = setTimeout(() => this.run(full), 30000);   // повтор пізніше; зміни не губляться
+    } finally { this.busy = false; }
+  }
+};
+sync.run(true);
+setInterval(() => { if (document.visibilityState === "visible") sync.run(true); }, 60000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync.run(true); });
+addEventListener("online", () => sync.run(true));

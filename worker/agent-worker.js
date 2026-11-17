@@ -101,7 +101,7 @@ async function deleteMemory(db, id) {
 }
 
 /* ====== Крок 4: пропозиції (виконуються лише після схвалення керівником) ====== */
-const SECTIONS = { business: 'Бізнес-центр', projects: 'Проєкти', finance: 'Фінанси', dev: 'Розробка', media: 'Медіацентр', comms: 'Комунікації', analytics: 'Аналітика' };
+const SECTIONS = { business: 'Бізнес-центр', projects: 'Проєкти', finance: 'Фінанси', media: 'Медіацентр (YouTube)', logistics: 'Логістика', market: 'Ринок', game: 'Розробка гри', biz: 'Бізнес', invest: 'Інвестиції', legal: 'Юридичний блок', dev: 'Розробка сайту', comms: 'Комунікації', analytics: 'Аналітика' };
 const PROP_OPEN_MAX = 30;
 async function listProposals(db) {
   await ensureSchema(db);
@@ -279,6 +279,8 @@ function systemPrompt(ctx = {}, extra = {}) {
     `Проєкти: ${projects.map(p => `${String(p.name).slice(0, 80)} (${p.progress | 0}%)`).join('; ') || 'немає'}.`,
     `Події сьогодні: ${events.map(e => `${String(e.t).slice(0, 5)} ${String(e.title).slice(0, 80)}`).join('; ') || 'немає'}.`,
     `Відкриті технічні завдання: ${tasks.map(t => `[${SECTIONS[t.section] || t.section}] ${String(t.title).slice(0, 80)} (${t.status === 'work' ? 'в роботі' : 'нове'})`).join('; ') || 'немає'}.`,
+    `Зведення розділів офісу:
+${String(ctx.summary || 'немає').slice(0, 1800)}`,
     `Пам'ять (№ — запис): ${memory.map(m => `№${m.id} ${m.text}`).join(' | ') || 'порожня'}.`,
     `Пропозиції, що чекають рішення: ${open.map(p => `№${p.id} ${p.title}`).join('; ') || 'немає'}.`
   ].join('\n');

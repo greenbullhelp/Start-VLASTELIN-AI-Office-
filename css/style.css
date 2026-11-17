@@ -484,3 +484,45 @@ body.eco .spanel,body.eco .sp-dim{animation:none}
 .sp-ask span{color:var(--muted);font-size:13px;flex:1;min-width:180px}
 .sp-form select{min-height:42px;background:rgba(3,8,18,.85);border:1px solid rgba(63,184,255,.4);color:var(--text);padding:8px 10px;font-size:15px;color-scheme:dark}
 @media (max-width:480px){.sp-props li{grid-template-columns:1fr}.pr-btns{flex-direction:row}.pr-btns button{flex:1}}
+
+/* ===== Меню на 17 розділів: компактніше на ПК, з прокруткою, якщо екран низький ===== */
+@media (min-width:901px){
+  .nav{min-height:0}
+  .menu-wrap{display:flex;flex-direction:column;min-height:0}
+  .menu{gap:3px;overflow-y:auto;min-height:0;scrollbar-width:thin;scrollbar-color:rgba(63,184,255,.4) transparent}
+  .menu button{padding:3px 10px 3px 6px;font-size:14px;gap:10px;flex:none}
+  .menu .hex{width:26px;height:26px}
+  .menu .hex svg{width:16px;height:16px}
+}
+.fin .chg.down{color:var(--red)}
+
+/* ===== Нові розділи ===== */
+.sp-form.sp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:stretch}
+.sp-form.sp-grid .btn-gold{grid-column:1/-1;justify-self:start}
+.sp-form.sp-grid .wide{grid-column:1/-1}
+.sp-form select,.sp-form input[type=date],.sp-form input[type=url]{min-height:42px;background:rgba(3,8,18,.85);border:1px solid rgba(63,184,255,.4);color:var(--text);padding:8px 10px;font-size:15px;color-scheme:dark;min-width:0;font-family:inherit}
+.sp-items small a{color:var(--cyan-2);margin-left:6px}
+.sp-link{background:none;border:none;color:var(--cyan-2);text-decoration:underline;font:inherit;font-size:12px;cursor:pointer;padding:0 0 0 8px}
+.sp-items li.op-in{border-left-color:var(--green)}
+.sp-items li.op-out{border-left-color:var(--red)}
+.sp-items li.cs-done,.sp-items li.cs-pub,.sp-items li.cs-closed{border-left-color:var(--green);opacity:.75}
+.sp-items li.cs-work,.sp-items li.cs-transit,.sp-items li.cs-shoot,.sp-items li.cs-edit,.sp-items li.cs-script,.sp-items li.cs-launch,.sp-items li.cs-sign{border-left-color:var(--amber)}
+.sp-items li.cs-problem,.sp-items li.lg-bad{border-left-color:var(--red)}
+.sp-items li.lg-warn{border-left-color:var(--amber);background:rgba(255,180,60,.07)}
+.sp-items li.cs-ready,.sp-items li.cs-scale,.sp-items li.cs-active{border-left-color:var(--gold)}
+.sp-items li.cs-pause{opacity:.6}
+.tile .dn,.mk-price .dn{color:var(--red);font-size:inherit}
+.tile .warn{color:var(--amber);font-size:inherit}
+.sp-cur{display:flex;gap:6px;align-items:center;margin:0 0 12px;color:var(--muted);font-size:13px;flex-wrap:wrap}
+.sp-cur button{min-width:44px;min-height:34px;background:rgba(3,8,18,.6);border:1px solid rgba(63,184,255,.35);color:var(--text);font:inherit;font-weight:700;cursor:pointer}
+.sp-cur button.on{border-color:var(--gold);color:var(--gold-2);background:rgba(232,183,90,.15)}
+.mk-price{display:flex;flex-direction:column;gap:2px;margin-bottom:14px}
+.mk-price small{color:var(--muted);font-size:12.5px;letter-spacing:.04em}
+.mk-price b{font-size:44px;font-weight:800;color:var(--gold-2);line-height:1.1;text-shadow:0 0 18px rgba(232,183,90,.45)}
+.mk-price .up{color:var(--green)}
+.pg-head{display:flex;gap:18px;align-items:center;margin-bottom:14px}
+.pg-head h3{margin:0 0 6px}
+.pg-ring{width:120px;height:120px;flex:none}
+.pg-ring text{fill:var(--gold-2);font-size:26px;font-weight:800;font-family:inherit}
+.sp-bars li small{font-size:11.5px}
+@media (max-width:480px){.mk-price b{font-size:34px}.pg-ring{width:96px;height:96px}.sp-form.sp-grid{grid-template-columns:1fr}}

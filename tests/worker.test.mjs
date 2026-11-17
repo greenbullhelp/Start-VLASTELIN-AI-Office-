@@ -102,7 +102,7 @@ globalThis.fetch = async (url, opts) => {
 };
 r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'запам’ятай: офіс у Києві' }], context: { tasks: [{ section: 'dev', title: 'Нова кнопка', status: 'new' }] } }), senv); j = await r.json();
 ok(apiCalls === 1 && j.reply === 'Запам’ятав.' && j.notes[0].type === 'remember' && j.changed.memory, 'remember: executed on server, one API call');
-ok(bodies[0].system.includes('Керівник любить дуже короткі звіти') && bodies[0].system.includes('[Розробка] Нова кнопка') && bodies[0].tools.length === 7, 'prompt has memory, tasks and all tools');
+ok(bodies[0].system.includes('Керівник любить дуже короткі звіти') && bodies[0].system.includes('[Розробка сайту] Нова кнопка') && bodies[0].tools.length === 7, 'prompt has memory, tasks and all tools');
 r = await worker.fetch(mem('GET'), senv); j = await r.json(); ok(j.memory.length === 2, 'memory persisted from chat');
 apiCalls = 0; r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'забудь про звіти' }] }), senv); j = await r.json();
 ok(apiCalls === 1 && j.reply.includes('Забув') && j.notes[0].type === 'forget', 'forget without text gets a reply, no second call');
@@ -124,3 +124,8 @@ r = await worker.fetch(pr('POST', { id: p1.id, decision: 'approved' }), senv); j
 r = await worker.fetch(pr('POST', { id: p1.id, decision: 'rejected' }), senv); ok(r.status === 409, 'decision is final');
 r = await worker.fetch(pr('POST', { id: p1.id, decision: 'delete' }), senv); ok(r.status === 400, 'bad decision rejected');
 r = await worker.fetch(pr('PUT', {}), senv); ok(r.status === 405, 'proposals: wrong method');
+// ===== Office summary from new sections reaches the prompt =====
+bodies = [];
+r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'привіт' }], context: { summary: 'Фінанси: баланс 1 000 ₴' } }), senv); j = await r.json();
+ok(bodies[0].system.includes('Зведення розділів офісу:\nФінанси: баланс 1 000 ₴'), 'office summary in prompt');
+ok(bodies[0].tools.find(t => t.name === 'propose').input_schema.properties.section.enum.includes('legal'), 'new sections allowed for proposals');

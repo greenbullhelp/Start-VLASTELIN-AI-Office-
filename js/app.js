@@ -131,7 +131,7 @@ async function askAgent(text, imgs = []) {
   try {
     const tasks = Object.entries(ws).flatMap(([s, w]) => (w && Array.isArray(w.tasks) ? w.tasks : [])
       .filter(t => t.status !== "done").map(t => ({ section: s, title: t.title, status: t.status }))).slice(0, 40);
-    const ctx = { user: CONFIG.userName, city: CONFIG.city, now: new Date().toLocaleString("uk-UA"), projects, events, tasks };
+    const ctx = { user: CONFIG.userName, city: CONFIG.city, now: new Date().toLocaleString("uk-UA"), projects, events, tasks, summary: officeSummary() };
     const r = await fetch(agent.url.replace(/\/+$/, "") + "/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Access-Code": agent.code || "" },
@@ -315,8 +315,10 @@ async function loadWeather() {
 loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
 
 /* ====== навігація (панелі розділів — див. кінець файлу) ====== */
-const SLUGS = { "Головна": "home", "Бізнес-центр": "business", "Проєкти": "projects", "Фінанси": "finance", "Розробка": "dev",
-  "Медіацентр": "media", "Комунікації": "comms", "Аналітика": "analytics", "Властелін": "brain", "Налаштування": "settings" };
+// Порядок = порядок у меню (номер SYS.xx береться звідси). «Загальний прогрес» — завжди останній.
+const SLUGS = { "Головна": "home", "Бізнес-центр": "business", "Проєкти": "projects", "Фінанси": "finance", "Медіацентр": "media",
+  "Логістика": "logistics", "Ринок": "market", "Розробка гри": "game", "Бізнес": "biz", "Інвестиції": "invest", "Юридичний блок": "legal",
+  "Розробка": "dev", "Комунікації": "comms", "Аналітика": "analytics", "Властелін": "brain", "Налаштування": "settings", "Загальний прогрес": "progress" };
 function setActive(slug) {
   document.querySelectorAll(".menu button").forEach(x => x.classList.toggle("active", SLUGS[x.dataset.s] === slug));
 }
@@ -378,16 +380,12 @@ $("eAddOk").onclick = addEvent;
 $("eTitle").onkeydown = e => { if (e.key === "Enter") addEvent(); };
 renderEvents();
 
-/* ====== фінанси (демо) ====== */
-const FIN_DEMO = [20, 24, 22, 30, 28, 34, 31, 38, 36, 44, 41, 50, 48, 56];   // демо-крива, не реальні дані
-function sparkPath(pts, w = 300, h = 60, max = 60) {
-  const step = w / (pts.length - 1);
-  return pts.map((v, i) => `${i ? "L" : "M"}${(i * step).toFixed(1)} ${(h - v / max * h).toFixed(1)}`).join(" ");
+/* ====== фінанси на головній: справжні дані з розділу «Фінанси» ====== */
+function sparkPath(pts, w = 300, h = 60) {   // крива, масштабована між мінімумом і максимумом
+  if (pts.length < 2) pts = [pts[0] || 0, pts[0] || 0];
+  const lo = Math.min(...pts), hi = Math.max(...pts), span = hi - lo || 1, step = w / (pts.length - 1);
+  return pts.map((v, i) => `${i ? "L" : "M"}${(i * step).toFixed(1)} ${(h - 4 - (v - lo) / span * (h - 8)).toFixed(1)}`).join(" ");
 }
-(function () {
-  const line = sparkPath(FIN_DEMO);
-  $("sparkLine").setAttribute("d", line); $("sparkArea").setAttribute("d", line + " L300 60 L0 60 Z");
-})();
 $("finBtn").onclick = () => go("finance");
 
 /* ====== команди асистента ====== */
@@ -607,7 +605,7 @@ const statusRows = () => [
 ].map(([n, st, t]) => `<li><span class="dot ${st}"></span><span>${n}</span><span class="muted">${t}</span></li>`).join("");
 const aiTxt = () => aiOnline ? "Онлайн" : !checked ? "…" : agentReady() ? "Немає зв'язку" : "Не налаштований";
 const note = t => `<p class="sp-note">${t}</p>`;
-const LOCAL_NOTE = note("Усі цифри обчислено з даних цього браузера (localStorage) і оновлюються автоматично.");
+const LOCAL_NOTE = note("Цифри обчислюються з даних офісу, спільних для всіх ваших пристроїв, і оновлюються автоматично.");
 const eventsList = () => {
   events.sort((a, b) => a.t.localeCompare(b.t));
   return `<ul class="sp-events">${events.map((ev, i) => `<li><time>${esc(ev.t)}</time><span>${esc(ev.title)}</span><button class="sp-x" data-act="ev-del" data-i="${i}" aria-label="Видалити подію">×</button></li>`).join("") || `<li class="empty">Подій немає</li>`}</ul>
@@ -652,14 +650,6 @@ const VIEWS = {
         <button class="sp-x" data-act="p-del" data-i="${i}" aria-label="Видалити проєкт ${esc(p.name)}">×</button></li>`).join("") || `<li class="empty">Проєктів поки немає — додайте перший.</li>`}</ul>
       ${note("Прогрес змінюйте повзунком. Список спільний з панеллю «Проєкти» на головній і з AI-агентом.")}`;
   } },
-  finance: { ico: "⬡", title: "ФІНАНСИ", render() {
-    const line = sparkPath(FIN_DEMO, 600, 140);
-    return `<div class="sp-demo"><span class="badge gold">DEMO</span> Це демонстраційні цифри, а не реальні дані компанії.</div>
-      <div class="sp-tiles">${tile("Баланс компанії · DEMO", esc($("balance").textContent))}${tile("Зміна · DEMO", '<span class="up">↗ +12.5%</span>')}</div>
-      <section class="sp-box"><h3>Динаміка · DEMO</h3>
-        <svg class="sp-spark" viewBox="0 0 600 140" preserveAspectRatio="none" aria-hidden="true"><path d="${line} L600 140 L0 140 Z" fill="url(#sparkFill)"/><path d="${line}" fill="none" stroke="#ffd88a" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg></section>
-      <section class="sp-box"><h3>Наступний крок</h3><ul class="sp-plan"><li>Підключити реальне джерело: таблицю (CSV / Google Sheets) або банк.</li><li>Доходи й витрати по кожному проєкту.</li><li>Прогноз руху коштів від AI-агента.</li></ul></section>`;
-  } },
   dev: { ico: "‹›", title: "РОЗРОБКА", render() {
     loadCommits();
     const repo = `https://github.com/${CONFIG.githubRepo}`;
@@ -677,10 +667,6 @@ const VIEWS = {
           <div class="sp-actions"><button class="btn-ghost" data-act="recheck">Перевірити знову</button><button class="btn-ghost" data-act="settings">Налаштування агента</button></div>
           <h3>Графіка</h3><p class="sp-note">${gfx}</p></section>
       </div>`;
-  } },
-  media: { ico: "▶", title: "МЕДІАЦЕНТР", render() {
-    return soon("Медіацентр — місце для матеріалів офісу: файлів, записів і контенту, підготовленого разом з AI-агентом.",
-      ["Бібліотека файлів і зображень по проєктах", "Записи зустрічей і голосові нотатки", "Тексти й пости, підготовлені AI-агентом", "Швидкий пошук по всіх матеріалах"]);
   } },
   comms: { ico: "◎", title: "КОМУНІКАЦІЇ", render() {
     return soon("Комунікації — пошта, месенджери й контакти в одному вікні, з чернетками відповідей від AI-агента.",
@@ -714,7 +700,7 @@ function placePanel() {   // на ПК панель займає простір 
 let ws = store.get("vl_ws", {});
 if (!ws || typeof ws !== "object" || Array.isArray(ws)) ws = {};
 const wsOf = s => (ws[s] = ws[s] && Array.isArray(ws[s].tasks) && Array.isArray(ws[s].wins) ? ws[s] : { tasks: [], wins: [] });
-const saveWs = () => store.set("vl_ws", ws);
+const saveWs = () => { store.set("vl_ws", ws); renderHomeFin(); };
 const TASK_ST = { new: "Нове", work: "В роботі", done: "Готово" };
 const TASK_NEXT = { new: "work", work: "done", done: "new" };
 let spTab = "main";
@@ -732,7 +718,7 @@ function tasksView(s) {
     <ul class="sp-tasks">${w.tasks.map((t, i) => `<li class="st-${esc(t.status)}"><div class="tm"><b>${esc(t.title)}</b>${t.desc ? `<p>${esc(t.desc)}</p>` : ""}<small>${new Date(t.at).toLocaleDateString("uk-UA")}</small></div>
       <button class="sp-st" data-act="t-st" data-i="${i}" title="Змінити статус">${TASK_ST[t.status] || TASK_ST.new}</button>
       <button class="sp-x" data-act="t-del" data-i="${i}" aria-label="Видалити завдання ${esc(t.title)}">×</button></li>`).join("") || `<li class="empty">Технічних завдань поки немає — додайте перше.</li>`}</ul>
-    ${note("Статус змінюється натисканням: Нове → В роботі → Готово. Завдання зберігаються в цьому браузері; пізніше (план «Апгрейд») їх зможуть брати в роботу агенти.")}`;
+    ${note("Статус змінюється натисканням: Нове → В роботі → Готово. Завдання спільні для всіх ваших пристроїв; пізніше їх зможуть брати в роботу найняті агенти.")}`;
 }
 function winsView(s) {
   const w = wsOf(s);
@@ -751,7 +737,7 @@ function renderPanel() {
 
 /* ====== «Властелін»: пропозиції (крок 4) і довготривала пам'ять (крок 2) — дані на сервері ====== */
 const brain = { memory: null, proposals: null, max: 200, err: "", at: 0, busy: false };
-const SECTION_NAMES = { business: "Бізнес-центр", projects: "Проєкти", finance: "Фінанси", dev: "Розробка", media: "Медіацентр", comms: "Комунікації", analytics: "Аналітика" };
+const SECTION_NAMES = { business: "Бізнес-центр", projects: "Проєкти", finance: "Фінанси", media: "Медіацентр", logistics: "Логістика", market: "Ринок", game: "Розробка гри", biz: "Бізнес", invest: "Інвестиції", legal: "Юридичний блок", dev: "Розробка", comms: "Комунікації", analytics: "Аналітика" };
 const MEM_CAT = { fact: "Факт", preference: "Вподобання", decision: "Рішення", goal: "Ціль" };
 async function brainApi(path, method = "GET", body) {
   const r = await fetch(agent.url.replace(/\/+$/, "") + path, {
@@ -776,7 +762,8 @@ async function loadBrain(force = false) {
 function markProposals() {   // лічильник нових пропозицій на кнопці меню
   const code = document.querySelector('.menu button[data-s="Властелін"] code'); if (!code) return;
   const n = (brain.proposals || []).filter(p => p.status === "new").length;
-  code.textContent = n ? `${n} нов.` : "09"; code.classList.toggle("hot", n > 0);
+  code.dataset.n = code.dataset.n || code.textContent;
+  code.textContent = n ? `${n} нов.` : code.dataset.n; code.classList.toggle("hot", n > 0);
 }
 function proposalsView() {
   if (!brain.proposals) return `<p class="empty">${brain.err ? esc(brain.err) : "Завантаження…"}</p>`;
@@ -815,6 +802,339 @@ VIEWS.brain = { ico: "⬡", title: "ВЛАСТЕЛІН · ПРОПОЗИЦІЇ �
 async function brainDo(fn, okMsg) {
   try { await fn(); if (okMsg) toast(okMsg); } catch (e) { toast(e.message || "Помилка"); }
   await loadBrain(true);
+}
+
+/* ====== розділи з власними даними ======
+   Дані кожного розділу лежать у vl_ws[section][list] → синхронізуються між пристроями разом із ТЗ і вікнами.
+   COL описує поля форми, статуси (натискання перемикає по колу) і числові поля, які можна змінити. */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const toNum = v => { const n = parseFloat(String(v ?? "").replace(/[\s ]/g, "").replace(",", ".")); return Number.isFinite(n) ? n : 0; };
+const money = (n, cur = "") => (Math.round(n * 100) / 100).toLocaleString("uk-UA", { maximumFractionDigits: 2 }) + (cur ? " " + cur : "");
+const todayISO = () => new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+const fmtDate = d => d ? new Date(d + "T00:00").toLocaleDateString("uk-UA") : "";
+const daysTo = d => d ? Math.round((new Date(d + "T00:00") - new Date(todayISO() + "T00:00")) / 864e5) : null;
+const share = (a, b) => b ? Math.round(a / b * 100) : 0;
+const INV_KINDS = [["crypto", "Криптовалюта"], ["gold", "Золото"], ["stocks", "Акції / фонди"], ["realty", "Нерухомість"], ["business", "Бізнес"], ["other", "Інше"]];
+const COL = {
+  finance: { list: "ops", add: "+ Додати операцію", fields: [
+    { k: "type", label: "Тип", type: "select", opts: [["in", "Дохід"], ["out", "Витрата"]] },
+    { k: "amount", label: "Сума", type: "number", req: true },
+    { k: "title", label: "Категорія або опис (напр. Реклама)" },
+    { k: "date", label: "Дата", type: "date", def: todayISO }],
+    edit: ["amount"],
+    line: x => ({ title: `${x.type === "in" ? "+" : "−"} ${money(toNum(x.amount), finCur())} · ${x.title || (x.type === "in" ? "Дохід" : "Витрата")}`, meta: fmtDate(x.date), cls: x.type === "in" ? "op-in" : "op-out" }) },
+  media: { list: "videos", add: "+ Додати відео", fields: [
+    { k: "title", label: "Назва відео або тема", req: true },
+    { k: "date", label: "Дата публікації", type: "date" },
+    { k: "link", label: "Посилання на YouTube (необов'язково)", type: "url" }],
+    st: [["idea", "Ідея"], ["script", "Сценарій"], ["shoot", "Зйомка"], ["edit", "Монтаж"], ["ready", "Готове"], ["pub", "Опубліковано"]] },
+  logistics: { list: "ships", add: "+ Додати відправлення", fields: [
+    { k: "title", label: "Що відправляємо", req: true },
+    { k: "route", label: "Маршрут: звідки → куди" },
+    { k: "carrier", label: "Перевізник (Нова пошта, DHL…)" },
+    { k: "ttn", label: "Номер ТТН / трек-номер" },
+    { k: "date", label: "Очікувана дата", type: "date" }],
+    st: [["plan", "Планується"], ["transit", "В дорозі"], ["done", "Доставлено"], ["problem", "Проблема"]],
+    line: x => {
+      const np = /нов|nova|np/i.test(x.carrier || "") && x.ttn;
+      return { title: x.title, meta: [x.route, x.carrier, x.ttn && "ТТН " + x.ttn, x.date && "очікується " + fmtDate(x.date)].filter(Boolean).join(" · "),
+        extra: np ? ` <a href="https://novaposhta.ua/tracking/?cargo_number=${encodeURIComponent(x.ttn)}" target="_blank" rel="noopener">відстежити ↗</a>` : "" };
+    } },
+  market: { list: "alerts", add: "+ Додати сповіщення", fields: [
+    { k: "price", label: "Рівень ціни XAU/USDT", type: "number", req: true },
+    { k: "dir", label: "Коли", type: "select", opts: [["above", "Ціна вище рівня"], ["below", "Ціна нижче рівня"]] }],
+    line: x => ({ title: `XAU/USDT ${x.dir === "below" ? "≤" : "≥"} ${money(toNum(x.price))}`, meta: x.hit ? `спрацювало ${new Date(x.hit).toLocaleString("uk-UA")}` : "чекає", cls: x.hit ? "cs-done" : "" }) },
+  game: { list: "backlog", add: "+ Додати в беклог", fields: [
+    { k: "title", label: "Фіча, баг або задача", req: true },
+    { k: "kind", label: "Тип", type: "select", opts: [["feature", "Фіча"], ["bug", "Баг"], ["art", "Графіка"], ["sound", "Звук"], ["level", "Рівень"]] }],
+    st: [["todo", "Заплановано"], ["work", "В роботі"], ["done", "Готово"]] },
+  biz: { list: "items", add: "+ Додати бізнес", fields: [
+    { k: "title", label: "Назва бізнесу або напряму", req: true },
+    { k: "niche", label: "Ніша" },
+    { k: "rev", label: "Дохід за місяць", type: "number" },
+    { k: "goal", label: "Ціль на місяць", type: "number" }],
+    st: [["idea", "Ідея"], ["launch", "Запуск"], ["work", "Працює"], ["scale", "Масштабування"], ["pause", "Пауза"]], edit: ["rev", "goal"],
+    line: x => ({ title: x.title, meta: [x.niche, `дохід ${money(toNum(x.rev), finCur())} з ${money(toNum(x.goal), finCur())} (${share(toNum(x.rev), toNum(x.goal))}%)`].filter(Boolean).join(" · ") }) },
+  invest: { list: "assets", add: "+ Додати актив", fields: [
+    { k: "title", label: "Актив (Золото, BTC, акції…)", req: true },
+    { k: "kind", label: "Тип", type: "select", opts: INV_KINDS },
+    { k: "inv", label: "Вкладено", type: "number", req: true },
+    { k: "val", label: "Поточна вартість", type: "number" }], edit: ["inv", "val"],
+    line: x => {
+      const inv = toNum(x.inv), val = x.val === "" || x.val == null ? inv : toNum(x.val), pl = val - inv;
+      return { title: x.title, meta: `${(INV_KINDS.find(k => k[0] === x.kind) || [, "Інше"])[1]} · вкладено ${money(inv, finCur())} → зараз ${money(val, finCur())} (${pl >= 0 ? "+" : "−"}${money(Math.abs(pl))}, ${pl >= 0 ? "+" : ""}${inv ? (pl / inv * 100).toFixed(1) : "0"}%)`, cls: pl >= 0 ? "op-in" : "op-out" };
+    } },
+  legal: { list: "docs", add: "+ Додати документ", fields: [
+    { k: "title", label: "Документ (договір, ліцензія…)", req: true },
+    { k: "kind", label: "Тип", type: "select", opts: [["contract", "Договір"], ["license", "Ліцензія / дозвіл"], ["company", "Установчі документи"], ["ip", "Торгова марка / IP"], ["other", "Інше"]] },
+    { k: "party", label: "Контрагент або орган" },
+    { k: "date", label: "Діє до", type: "date" }],
+    st: [["draft", "Чернетка"], ["sign", "На підписі"], ["active", "Діє"], ["closed", "Закрито"]],
+    line: x => {
+      const d = daysTo(x.date), live = x.st !== "closed";
+      const when = x.date ? (d < 0 ? `термін минув ${fmtDate(x.date)}` : d === 0 ? "закінчується сьогодні" : `діє до ${fmtDate(x.date)} (${d} дн.)`) : "";
+      const f = COL.legal.fields[1];
+      return { title: x.title, meta: [(f.opts.find(o => o[0] === x.kind) || [, ""])[1], x.party, when].filter(Boolean).join(" · "),
+        cls: live && d !== null && d < 0 ? "lg-bad" : live && d !== null && d <= 30 ? "lg-warn" : "cs-" + (x.st || "") };
+    } }
+};
+const colList = s => { const w = wsOf(s), c = COL[s]; return Array.isArray(w[c.list]) ? w[c.list] : (w[c.list] = []); };
+const finCur = () => (ws.finance && ws.finance.cur) || "₴";
+function colForm(s, title) {
+  const c = COL[s];
+  return `<section class="sp-box"><h3>${title || c.add.replace("+ ", "")}</h3><div class="sp-form sp-grid">${c.fields.map(f => f.type === "select"
+      ? `<select id="cf_${f.k}" aria-label="${f.label}" title="${f.label}">${f.opts.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select>`
+      : `<input id="cf_${f.k}" type="${f.type === "date" ? "date" : f.type === "url" ? "url" : "text"}"${f.type === "number" ? ' inputmode="decimal"' : ""} placeholder="${f.label}${f.req ? " *" : ""}" aria-label="${f.label}" title="${f.label}" maxlength="${f.type === "url" ? 300 : 120}" value="${f.def ? f.def() : ""}" data-enter="c-add">`).join("")}
+    <button class="btn-gold" data-act="c-add" data-k="${s}">${c.add}</button></div></section>`;
+}
+function colItems(s, items, empty) {
+  const c = COL[s];
+  return `<ul class="sp-tasks sp-items">${items.map(x => {
+    const l = c.line ? c.line(x) : { title: x.title, meta: c.fields.filter(f => f.k !== "title" && f.type !== "url" && x[f.k] !== "" && x[f.k] != null)
+      .map(f => f.type === "select" ? (f.opts.find(o => o[0] === x[f.k]) || [, x[f.k]])[1] : f.type === "date" ? `${f.label.toLowerCase()}: ${fmtDate(x[f.k])}` : x[f.k]).join(" · ") };
+    const link = x.link && /^https?:\/\//i.test(x.link) ? ` <a href="${esc(x.link)}" target="_blank" rel="noopener">відкрити ↗</a>` : "";
+    const st = c.st ? c.st.find(o => o[0] === x.st) || c.st[0] : null;
+    const editBtn = c.edit ? `<button class="sp-link" data-act="c-edit" data-id="${esc(x.id)}">змінити суми</button>` : "";
+    return `<li class="${esc(l.cls || (st ? "cs-" + st[0] : ""))}"><div class="tm"><b>${esc(l.title)}</b><small>${esc(l.meta || "")}${link}${l.extra || ""}${st ? editBtn : ""}</small></div>
+      ${st ? `<button class="sp-st" data-act="c-st" data-id="${esc(x.id)}" title="Змінити статус">${st[1]}</button>` : c.edit ? `<button class="sp-st" data-act="c-edit" data-id="${esc(x.id)}">Змінити</button>` : "<span></span>"}
+      <button class="sp-x" data-act="c-del" data-id="${esc(x.id)}" aria-label="Видалити «${esc(l.title)}»">×</button></li>`;
+  }).join("") || `<li class="empty">${empty}</li>`}</ul>`;
+}
+const askBtn = (label, q, hint = "") => `<div class="sp-ask"><button class="btn-ghost" data-act="ask" data-q="${esc(q)}">◈ ${label}</button>${hint ? `<span>${hint}</span>` : ""}</div>`;
+const countBy = (items, key) => items.reduce((m, x) => (m[x[key]] = (m[x[key]] || 0) + 1, m), {});
+const stBars = (s, items) => { const c = COL[s], n = countBy(items, "st"); return bars(c.st.map(([k, t]) => [t, share(n[k] || 0, items.length), n[k] || 0])); };
+const SYNC_NOTE = note("Дані спільні для всіх ваших пристроїв: зберігаються на сервері офісу й синхронізуються автоматично.");
+
+/* --- Фінанси --- */
+function finStats() {
+  const ops = colList("finance"), m = todayISO().slice(0, 7), cats = {};
+  let bal = 0, inM = 0, outM = 0;
+  for (const o of ops) {
+    const a = toNum(o.amount), inc = o.type === "in";
+    bal += inc ? a : -a;
+    if ((o.date || "").startsWith(m)) inc ? inM += a : outM += a;
+    if (!inc) cats[o.title || "Інше"] = (cats[o.title || "Інше"] || 0) + a;
+  }
+  const series = []; let run = 0;
+  for (const o of ops.slice().sort((a, b) => (a.date || "").localeCompare(b.date || "") || a.at - b.at)) series.push(run += (o.type === "in" ? 1 : -1) * toNum(o.amount));
+  return { ops, bal, inM, outM, cats, series: [0, ...series].slice(-30) };
+}
+function renderHomeFin() {
+  const s = finStats(), cur = finCur(), net = s.inM - s.outM;
+  $("balance").textContent = s.ops.length ? money(s.bal, cur) : "—";
+  $("finChg").textContent = s.ops.length ? `${net >= 0 ? "↗ +" : "↘ −"}${money(Math.abs(net), cur)} за місяць` : "Додайте першу операцію";
+  $("finChg").classList.toggle("down", net < 0);
+  $("finCode").textContent = s.ops.length ? `${s.ops.length} ОП.` : "ПОРОЖНЬО";
+  const line = sparkPath(s.series);
+  $("sparkLine").setAttribute("d", line); $("sparkArea").setAttribute("d", line + " L300 60 L0 60 Z");
+}
+VIEWS.finance = { ico: "⬡", title: "ФІНАНСИ", render() {
+  const s = finStats(), cur = finCur(), line = sparkPath(s.series, 600, 140);
+  const cats = Object.entries(s.cats).sort((a, b) => b[1] - a[1]).slice(0, 8), maxCat = cats.length ? cats[0][1] : 1;
+  const ops = s.ops.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "") || b.at - a.at);
+  return `<div class="sp-tiles">${tile("Баланс", money(s.bal, cur))}${tile("Доходи за місяць", `<span class="up">+${money(s.inM)}</span>`)}${tile("Витрати за місяць", `<span class="dn">−${money(s.outM)}</span>`)}${tile("Операцій", s.ops.length)}</div>
+    <div class="sp-cur">Валюта: ${["₴", "$", "€", "USDT"].map(c => `<button class="${c === cur ? "on" : ""}" data-act="fin-cur" data-k="${c}">${c}</button>`).join("")}</div>
+    ${colForm("finance", "Нова операція")}
+    <div class="sp-cols">
+      <section class="sp-box"><h3>Динаміка балансу</h3>${s.ops.length > 1 ? `<svg class="sp-spark" viewBox="0 0 600 140" preserveAspectRatio="none" aria-hidden="true"><path d="${line} L600 140 L0 140 Z" fill="url(#sparkFill)"/><path d="${line}" fill="none" stroke="#ffd88a" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>` : `<p class="empty">Графік з'явиться після двох операцій.</p>`}</section>
+      <section class="sp-box"><h3>Витрати за категоріями</h3>${cats.length ? bars(cats.map(([n, v]) => [n, v / maxCat * 100, money(v)]), "gold") : `<p class="empty">Витрат ще немає.</p>`}</section>
+    </div>
+    <section class="sp-box"><h3>Операції</h3>${colItems("finance", ops, "Операцій поки немає — додайте дохід або витрату вище.")}</section>
+    ${askBtn("Аналіз фінансів від Властеліна", "Проаналізуй мої фінанси (баланс, доходи, витрати за категоріями) і дай 3 поради, як покращити.", "Розумна модель, ≈$0.01–0.03.")}${SYNC_NOTE}`;
+} };
+
+/* --- Медіацентр (YouTube) --- */
+VIEWS.media = { ico: "▶", title: "МЕДІАЦЕНТР · YOUTUBE", render() {
+  const v = colList("media"), n = countBy(v, "st"), inWork = v.length - (n.pub || 0) - (n.idea || 0);
+  const next = v.filter(x => x.st !== "pub" && x.date).sort((a, b) => a.date.localeCompare(b.date))[0];
+  return `<div class="sp-tiles">${tile("Відео в плані", v.length)}${tile("Ідей", n.idea || 0)}${tile("У виробництві", inWork)}${tile("Опубліковано", n.pub || 0)}</div>
+    <div class="sp-actions"><a class="btn-ghost" href="https://studio.youtube.com" target="_blank" rel="noopener">YouTube Studio ↗</a><a class="btn-ghost" href="https://www.youtube.com/upload" target="_blank" rel="noopener">Завантажити відео ↗</a></div>
+    ${next ? note(`Найближча публікація: «${esc(next.title)}» — ${fmtDate(next.date)}.`) : ""}
+    ${colForm("media", "Нове відео")}
+    <div class="sp-cols">
+      <section class="sp-box"><h3>Відео</h3>${colItems("media", v, "Відео поки немає. Додайте ідею — далі натискайте статус: Ідея → Сценарій → Зйомка → Монтаж → Готове → Опубліковано.")}</section>
+      <section class="sp-box"><h3>Конвеєр виробництва</h3>${stBars("media", v)}</section>
+    </div>
+    ${askBtn("Ідеї для відео від Властеліна", "Запропонуй 5 ідей відео для мого YouTube-каналу на основі моїх проєктів і бізнесу: назва, гачок у перші 10 секунд, коротка структура.")}${SYNC_NOTE}`;
+} };
+
+/* --- Логістика --- */
+VIEWS.logistics = { ico: "⇄", title: "ЛОГІСТИКА", render() {
+  const v = colList("logistics"), n = countBy(v, "st");
+  const order = { problem: 0, transit: 1, plan: 2, done: 3 };
+  const list = v.slice().sort((a, b) => (order[a.st] ?? 9) - (order[b.st] ?? 9) || (a.date || "9").localeCompare(b.date || "9"));
+  return `<div class="sp-tiles">${tile("Планується", n.plan || 0)}${tile("В дорозі", n.transit || 0)}${tile("Доставлено", n.done || 0)}${tile("Проблеми", n.problem ? `<span class="dn">${n.problem}</span>` : 0)}</div>
+    ${colForm("logistics", "Нове відправлення")}
+    <section class="sp-box"><h3>Відправлення</h3>${colItems("logistics", list, "Відправлень поки немає. Статус змінюйте натисканням: Планується → В дорозі → Доставлено → Проблема.")}</section>
+    ${note("Для Нової пошти з номером ТТН з'являється посилання «відстежити».")}${SYNC_NOTE}`;
+} };
+
+/* --- Ринок: XAU/USDT --- */
+const market = { p: null, kl: null, err: "", at: 0, src: "", time: null };
+async function getJson(u) { const r = await fetch(u); if (!r.ok) throw new Error(r.status); return r.json(); }
+async function loadMarket(force = false) {
+  if (!force && Date.now() - market.at < 15e3) return;
+  market.at = Date.now();
+  try {
+    try {
+      const [t, k] = await Promise.all([getJson("https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=XAUUSDT"), getJson("https://fapi.binance.com/fapi/v1/klines?symbol=XAUUSDT&interval=1h&limit=48")]);
+      market.p = { last: +t.lastPrice, chg: +t.priceChangePercent, hi: +t.highPrice, lo: +t.lowPrice, vol: +t.quoteVolume };
+      market.kl = k.map(r => +r[4]); market.src = "Binance Futures";
+    } catch (e) {
+      const [t, k] = await Promise.all([getJson("https://api.bybit.com/v5/market/tickers?category=linear&symbol=XAUUSDT"), getJson("https://api.bybit.com/v5/market/kline?category=linear&symbol=XAUUSDT&interval=60&limit=48")]);
+      const x = t.result.list[0];
+      market.p = { last: +x.lastPrice, chg: +x.price24hPcnt * 100, hi: +x.highPrice24h, lo: +x.lowPrice24h, vol: +x.turnover24h };
+      market.kl = k.result.list.map(r => +r[4]).reverse(); market.src = "Bybit";
+    }
+    if (!Number.isFinite(market.p.last)) throw new Error("bad data");
+    market.err = ""; market.time = new Date();
+    checkAlerts();
+  } catch (e) { market.err = "Не вдалося отримати ціну з біржі. Перевірте інтернет — спробую ще раз за 20 с."; }
+  refreshPanel("market");
+}
+function checkAlerts() {
+  const p = market.p && market.p.last; if (!p || !ws.market) return;
+  let hit = false;
+  for (const a of colList("market")) {
+    if (a.hit) continue;
+    if ((a.dir === "below" && p <= toNum(a.price)) || (a.dir !== "below" && p >= toNum(a.price))) {
+      a.hit = Date.now(); hit = true;
+      const msg = `XAU/USDT ${a.dir === "below" ? "опустився до" : "досяг"} ${money(toNum(a.price))} (зараз ${money(p)})`;
+      toast("🔔 " + msg); say(`<b>Сповіщення ринку</b><br>${esc(msg)}`);
+    }
+  }
+  if (hit) { saveWs(); refreshPanel("market"); }
+}
+VIEWS.market = { ico: "◭", title: "РИНОК · XAU/USDT", render() {
+  loadMarket();
+  const m = market.p, up = m && m.chg >= 0, line = market.kl && market.kl.length > 1 ? sparkPath(market.kl, 600, 140) : "";
+  const price = m ? `<div class="mk-price"><small>XAU/USDT · золото (унція) в USDT</small><b>${money(m.last)}</b>
+      <span class="${up ? "up" : "dn"}">${up ? "▲ +" : "▼ "}${m.chg.toFixed(2)}% за 24 год</span></div>`
+    : `<p class="empty">${esc(market.err || "Завантаження ціни…")}</p>`;
+  return `${price}
+    ${m ? `<div class="sp-tiles">${tile("Максимум 24 год", money(m.hi))}${tile("Мінімум 24 год", money(m.lo))}${tile("Обсяг 24 год", money(m.vol / 1e6) + " млн")}${tile("Оновлено", market.time.toLocaleTimeString("uk-UA"))}</div>` : ""}
+    ${line ? `<section class="sp-box"><h3>Останні 48 годин</h3><svg class="sp-spark" viewBox="0 0 600 140" preserveAspectRatio="none" aria-hidden="true"><path d="${line} L600 140 L0 140 Z" fill="url(#sparkFill)"/><path d="${line}" fill="none" stroke="#ffd88a" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>
+      <p class="sp-note">Мін. ${money(Math.min(...market.kl))} · макс. ${money(Math.max(...market.kl))} · джерело: ${esc(market.src)}. Ціна оновлюється кожні 20 с, поки розділ відкритий.</p></section>` : ""}
+    <div class="sp-actions"><a class="btn-ghost" href="https://www.binance.com/uk-UA/futures/XAUUSDT" target="_blank" rel="noopener">Binance ↗</a><a class="btn-ghost" href="https://www.tradingview.com/symbols/XAUUSD/" target="_blank" rel="noopener">TradingView ↗</a></div>
+    ${colForm("market", "Сповіщення про ціну")}
+    <section class="sp-box"><h3>Мої сповіщення</h3>${colItems("market", colList("market"), "Сповіщень немає. Задайте рівень — офіс повідомить, коли ціна його перетне (поки сайт відкритий).")}</section>
+    ${askBtn("Огляд золота від Властеліна", `Ціна XAU/USDT зараз ${m ? money(m.last) : "невідома"} (${m ? m.chg.toFixed(2) + "% за 24 год" : ""}). Коротко: які фактори зазвичай впливають на золото і на що мені звернути увагу. Без інвестиційних порад.`, "Це не інвестиційна порада.")}`;
+} };
+
+/* --- Розробка гри --- */
+const GAME_FIELDS = [["name", "Назва гри"], ["genre", "Жанр"], ["platform", "Платформи (ПК, мобільні…)"], ["engine", "Рушій (Unity, Godot…)"], ["idea", "Концепт в одному реченні"]];
+VIEWS.game = { ico: "◈", title: "РОЗРОБКА ГРИ", render() {
+  const v = colList("game"), n = countBy(v, "st"), c = wsOf("game").concept || {};
+  const bugs = v.filter(x => x.kind === "bug" && x.st !== "done").length, prog = share(n.done || 0, v.length);
+  const kinds = COL.game.fields[1].opts.map(([k, t]) => { const all = v.filter(x => x.kind === k); return [t, share(all.filter(x => x.st === "done").length, all.length), `${all.filter(x => x.st === "done").length}/${all.length}`]; }).filter(r => r[2] !== "0/0");
+  return `<div class="sp-tiles">${tile("Прогрес гри", prog + "%", `${n.done || 0} з ${v.length} задач`)}${tile("В роботі", n.work || 0)}${tile("Відкриті баги", bugs ? `<span class="dn">${bugs}</span>` : 0)}${tile("Заплановано", n.todo || 0)}</div>
+    <section class="sp-box"><h3>Концепт гри</h3><div class="sp-form sp-grid">${GAME_FIELDS.map(([k, t]) => `<input id="gc_${k}" placeholder="${t}" aria-label="${t}" title="${t}" maxlength="${k === "idea" ? 200 : 60}" value="${esc(c[k] || "")}" data-enter="game-save"${k === "idea" ? ' class="wide"' : ""}>`).join("")}
+      <button class="btn-gold" data-act="game-save">Зберегти концепт</button></div></section>
+    ${colForm("game", "Беклог: нова задача")}
+    <div class="sp-cols">
+      <section class="sp-box"><h3>Беклог</h3>${colItems("game", v, "Беклог порожній. Додайте фічі, баги, графіку — прогрес гри рахується з виконаних задач.")}</section>
+      <section class="sp-box"><h3>Прогрес за напрямами</h3>${kinds.length ? bars(kinds) : `<p class="empty">Немає даних</p>`}</section>
+    </div>
+    ${askBtn("Ідеї механік від Властеліна", `Моя гра: ${[c.name, c.genre, c.platform, c.engine, c.idea].filter(Boolean).join(", ") || "концепт ще не заповнено"}. Запропонуй 5 ігрових механік і план першої демо-версії (MVP) на 4 тижні.`)}${SYNC_NOTE}`;
+} };
+
+/* --- Бізнес --- */
+VIEWS.biz = { ico: "▥", title: "БІЗНЕС", render() {
+  const v = colList("biz"), cur = finCur(), rev = v.reduce((a, x) => a + toNum(x.rev), 0), goal = v.reduce((a, x) => a + toNum(x.goal), 0);
+  const working = v.filter(x => x.st === "work" || x.st === "scale").length;
+  return `<div class="sp-tiles">${tile("Напрямів", v.length)}${tile("Працюють", working)}${tile("Дохід / міс", money(rev, cur))}${tile("Виконання цілі", share(rev, goal) + "%", `ціль ${money(goal, cur)}`)}</div>
+    ${colForm("biz", "Новий бізнес або напрям")}
+    <div class="sp-cols">
+      <section class="sp-box"><h3>Бізнеси</h3>${colItems("biz", v, "Додайте перший бізнес. Статус: Ідея → Запуск → Працює → Масштабування → Пауза.")}</section>
+      <section class="sp-box"><h3>Дохід до цілі</h3>${v.some(x => toNum(x.goal)) ? bars(v.filter(x => toNum(x.goal)).map(x => [x.title, Math.min(100, share(toNum(x.rev), toNum(x.goal))), share(toNum(x.rev), toNum(x.goal)) + "%"]), "gold") : `<p class="empty">Задайте цілі доходу.</p>`}</section>
+    </div>
+    ${askBtn("Стратегія від Властеліна", "Проаналізуй мої бізнес-напрями (статус, дохід, ціль) і запропонуй, на чому зосередитися цього місяця, щоб найшвидше вийти на ціль.")}${SYNC_NOTE}`;
+} };
+
+/* --- Інвестиції --- */
+function invStats() {
+  const v = colList("invest"); let inv = 0, val = 0; const kinds = {};
+  for (const x of v) { const a = toNum(x.inv), b = x.val === "" || x.val == null ? a : toNum(x.val); inv += a; val += b; kinds[x.kind] = (kinds[x.kind] || 0) + b; }
+  return { v, inv, val, pl: val - inv, kinds };
+}
+VIEWS.invest = { ico: "◔", title: "ІНВЕСТИЦІЇ", render() {
+  const s = invStats(), cur = finCur(), up = s.pl >= 0;
+  const alloc = INV_KINDS.filter(([k]) => s.kinds[k]).map(([k, t]) => [t, share(s.kinds[k], s.val), share(s.kinds[k], s.val) + "%"]);
+  return `<div class="sp-tiles">${tile("Вкладено", money(s.inv, cur))}${tile("Поточна вартість", money(s.val, cur))}${tile("Прибуток / збиток", `<span class="${up ? "up" : "dn"}">${up ? "+" : "−"}${money(Math.abs(s.pl))}</span>`)}${tile("Дохідність", `<span class="${up ? "up" : "dn"}">${s.inv ? (up ? "+" : "") + (s.pl / s.inv * 100).toFixed(1) : "0"}%</span>`)}</div>
+    ${market.p ? note(`Довідка: золото (XAU/USDT) зараз ${money(market.p.last)} за унцію — розділ «Ринок».`) : ""}
+    ${colForm("invest", "Новий актив")}
+    <div class="sp-cols">
+      <section class="sp-box"><h3>Портфель</h3>${colItems("invest", s.v, "Портфель порожній. Додайте актив і суму вкладення; поточну вартість оновлюйте кнопкою «Змінити».")}</section>
+      <section class="sp-box"><h3>Розподіл за типами</h3>${alloc.length ? bars(alloc, "gold") : `<p class="empty">Немає активів.</p>`}</section>
+    </div>
+    ${askBtn("Огляд портфеля від Властеліна", "Оціни диверсифікацію мого інвестиційного портфеля і ризики концентрації. Коротко, без конкретних порад купити чи продати.", "Це не інвестиційна порада.")}${SYNC_NOTE}`;
+} };
+
+/* --- Юридичний блок --- */
+VIEWS.legal = { ico: "§", title: "ЮРИДИЧНИЙ БЛОК", render() {
+  const v = colList("legal"), live = v.filter(x => x.st !== "closed" && x.date);
+  const soonN = live.filter(x => { const d = daysTo(x.date); return d >= 0 && d <= 30; }).length, expired = live.filter(x => daysTo(x.date) < 0).length;
+  const list = v.slice().sort((a, b) => (a.st === "closed") - (b.st === "closed") || (a.date || "9999").localeCompare(b.date || "9999"));
+  return `<div class="sp-tiles">${tile("Документів", v.length)}${tile("Діють", v.filter(x => x.st === "active").length)}${tile("Закінчуються ≤30 дн.", soonN ? `<span class="warn">${soonN}</span>` : 0)}${tile("Термін минув", expired ? `<span class="dn">${expired}</span>` : 0)}</div>
+    ${colForm("legal", "Новий документ")}
+    <section class="sp-box"><h3>Документи · спершу найтерміновіші</h3>${colItems("legal", list, "Документів поки немає. Додайте договори, ліцензії, установчі документи з датою закінчення — офіс підсвітить термінові.")}</section>
+    ${askBtn("Юридичний чек-лист від Властеліна", "За списком моїх документів підкажи, що варто перевірити або продовжити найближчим часом, і які типові документи ще можуть знадобитися для мого бізнесу.", "Не замінює консультацію юриста.")}
+    ${note("Тут зберігаються назви й терміни документів. Самі файли та персональні дані сюди не завантажуйте.")}${SYNC_NOTE}`;
+} };
+
+/* --- Загальний прогрес (останній пункт меню) --- */
+function progressData() {
+  const rows = [];
+  const add = (name, done, total, extra) => rows.push({ name, done, total, p: share(done, total), extra });
+  const s = stats(); if (projects.length) rows.push({ name: "Проєкти", p: s.avg, extra: `${s.n} проєктів, середній прогрес`, done: s.done, total: s.n });
+  const v = k => colList(k);
+  if (v("media").length) add("Медіацентр", v("media").filter(x => x.st === "pub").length, v("media").length, "опубліковано відео");
+  if (v("logistics").length) add("Логістика", v("logistics").filter(x => x.st === "done").length, v("logistics").length, "доставлено");
+  if (v("game").length) add("Розробка гри", v("game").filter(x => x.st === "done").length, v("game").length, "задач беклогу");
+  const b = v("biz"), rev = b.reduce((a, x) => a + toNum(x.rev), 0), goal = b.reduce((a, x) => a + toNum(x.goal), 0);
+  if (goal) rows.push({ name: "Бізнес", p: Math.min(100, share(rev, goal)), extra: "дохід до цілі місяця" });
+  const ld = v("legal").filter(x => x.st !== "closed"); if (ld.length) add("Юридичний блок", ld.filter(x => x.st === "active" && (daysTo(x.date) === null || daysTo(x.date) >= 0)).length, ld.length, "документів у порядку");
+  let td = 0, tt = 0; const perSec = [];
+  for (const [slug, name] of Object.entries(SECTION_NAMES)) {
+    const t = (ws[slug] && Array.isArray(ws[slug].tasks)) ? ws[slug].tasks : [];
+    if (t.length) { const d = t.filter(x => x.status === "done").length; td += d; tt += t.length; perSec.push([name, share(d, t.length), `${d}/${t.length}`]); }
+  }
+  if (tt) add("Технічні завдання", td, tt, "виконано в усіх розділах");
+  const overall = rows.length ? Math.round(rows.reduce((a, r) => a + r.p, 0) / rows.length) : 0;
+  return { rows, overall, perSec, td, tt };
+}
+VIEWS.progress = { ico: "◎", title: "ЗАГАЛЬНИЙ ПРОГРЕС", render() {
+  const d = progressData(), f = finStats(), inv = invStats(), cur = finCur();
+  const ring = `<svg class="pg-ring" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="50" fill="none" stroke="rgba(63,184,255,.15)" stroke-width="10"/>
+    <circle cx="60" cy="60" r="50" fill="none" stroke="url(#goldGrad)" stroke-width="10" stroke-linecap="round" stroke-dasharray="${(d.overall / 100 * 314.16).toFixed(1)} 400" transform="rotate(-90 60 60)"/>
+    <text x="60" y="68" text-anchor="middle">${d.overall}%</text></svg>`;
+  return `<div class="pg-head">${ring}<div><h3>Загальний прогрес офісу</h3><p class="sp-note">Середнє за всіма блоками, де вже є дані. Додавайте дані в розділи — картина ставатиме точнішою.</p></div></div>
+    <div class="sp-tiles">${tile("Баланс", money(f.bal, cur))}${tile("Інвестиції", money(inv.val, cur), `${inv.pl >= 0 ? "+" : "−"}${money(Math.abs(inv.pl))}`)}${tile("ТЗ виконано", `${d.td}/${d.tt}`)}${tile("XAU/USDT", market.p ? money(market.p.last) : "—")}</div>
+    <div class="sp-cols">
+      <section class="sp-box"><h3>Прогрес за блоками</h3>${d.rows.length ? `<ul class="sp-bars">${d.rows.map(r => `<li><span>${esc(r.name)} <small class="muted">· ${esc(r.extra || "")}</small></span><i><b style="width:${r.p}%"></b></i><code>${r.p}%</code></li>`).join("")}</ul>` : `<p class="empty">Поки немає даних. Почніть з будь-якого розділу.</p>`}</section>
+      <section class="sp-box"><h3>Технічні завдання за розділами</h3>${d.perSec.length ? bars(d.perSec, "gold") : `<p class="empty">Технічних завдань ще немає.</p>`}</section>
+    </div>
+    ${askBtn("Пріоритети тижня від Властеліна", "Подивись на загальний прогрес офісу за всіма блоками і назви 3 головні пріоритети на цей тиждень із коротким поясненням.", "Розумна модель, ≈$0.01–0.03.")}`;
+} };
+
+// Коротке зведення для Властеліна (щоб аналізував усі блоки без зайвих токенів).
+function officeSummary() {
+  try {
+    const f = finStats(), inv = invStats(), cur = finCur(), n = k => countBy(colList(k), "st");
+    const legalSoon = colList("legal").filter(x => x.st !== "closed" && x.date && daysTo(x.date) <= 30).map(x => `${x.title} (${fmtDate(x.date)})`);
+    const b = colList("biz");
+    return [
+      `Фінанси: баланс ${money(f.bal, cur)}, за місяць +${money(f.inM)} / −${money(f.outM)}, операцій ${f.ops.length}; топ витрат: ${Object.entries(f.cats).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${money(v)}`).join(", ") || "немає"}.`,
+      `YouTube: ${colList("media").length} відео (${Object.entries(n("media")).map(([k, v]) => `${(COL.media.st.find(s => s[0] === k) || [, k])[1]} ${v}`).join(", ") || "немає"}).`,
+      `Логістика: ${Object.entries(n("logistics")).map(([k, v]) => `${(COL.logistics.st.find(s => s[0] === k) || [, k])[1]} ${v}`).join(", ") || "немає відправлень"}.`,
+      market.p ? `Ринок: XAU/USDT ${money(market.p.last)} (${market.p.chg.toFixed(2)}% за 24 год).` : "",
+      `Гра: ${[wsOf("game").concept?.name, wsOf("game").concept?.genre].filter(Boolean).join(", ") || "концепт не заповнено"}; беклог ${colList("game").length}, виконано ${n("game").done || 0}.`,
+      `Бізнес: ${b.map(x => `${x.title} (${(COL.biz.st.find(s => s[0] === x.st) || [, ""])[1]}, ${money(toNum(x.rev))}/${money(toNum(x.goal))})`).join("; ") || "немає"}.`,
+      `Інвестиції: вкладено ${money(inv.inv, cur)}, зараз ${money(inv.val, cur)}.`,
+      `Юридичне: документів ${colList("legal").length}; термінові: ${legalSoon.join(", ") || "немає"}.`,
+      `Загальний прогрес офісу: ${progressData().overall}%.`
+    ].filter(Boolean).join("\n").slice(0, 1800);
+  } catch (e) { return ""; }
 }
 function refreshPanel(...which) { if (section !== "home" && which.includes(section)) renderPanel(); }
 function openPanel(slug) {
@@ -878,6 +1198,54 @@ const PANEL_ACTS = {
   "w-del"(i) {
     const list = wsOf(section).wins, x = list[i]; if (!x || !confirm(`Видалити вікно «${x.title}»?`)) return;
     list.splice(i, 1); saveWs(); renderPanel(); toast("Вікно видалено");
+  },
+  // Розділи з власними даними (COL): додати / статус / змінити суми / видалити
+  "c-add"() {
+    const c = COL[section]; if (!c) return;
+    const x = { id: uid(), at: Date.now() };
+    for (const f of c.fields) {
+      const el = $("cf_" + f.k); let v = el.value.trim();
+      if (f.req && !v) { el.focus(); toast(`Заповніть: ${f.label}`); return; }
+      if (f.type === "number" && v) {
+        if (!Number.isFinite(parseFloat(v.replace(/[\s ]/g, "").replace(",", ".")))) { el.focus(); toast(`«${f.label}» — має бути число`); return; }
+        v = toNum(v);
+      }
+      if (f.type === "url" && v && !/^https?:\/\//i.test(v)) v = "https://" + v;
+      x[f.k] = typeof v === "string" ? v.slice(0, 300) : v;
+    }
+    if (c.st) x.st = c.st[0][0];
+    colList(section).unshift(x); saveWs(); renderPanel(); toast("Додано");
+    if (section === "market") checkAlerts();
+  },
+  "c-st"(_, b) {
+    const c = COL[section], x = c && colList(section).find(i => i.id === b.dataset.id); if (!x || !c.st) return;
+    const i = c.st.findIndex(o => o[0] === x.st); x.st = c.st[(i + 1) % c.st.length][0]; x.at = Date.now();
+    saveWs(); renderPanel();
+  },
+  "c-edit"(_, b) {
+    const c = COL[section], x = c && colList(section).find(i => i.id === b.dataset.id); if (!x || !c.edit) return;
+    for (const k of c.edit) {
+      const f = c.fields.find(f => f.k === k), v = prompt(`${f.label} — «${x.title || ""}»:`, x[k] ?? "");
+      if (v === null) return;
+      if (v.trim() !== "") { if (!Number.isFinite(parseFloat(v.replace(/[\s ]/g, "").replace(",", ".")))) { toast("Потрібне число"); return; } x[k] = toNum(v); }
+    }
+    x.at = Date.now(); saveWs(); renderPanel(); toast("Збережено");
+  },
+  "c-del"(_, b) {
+    const list = COL[section] ? colList(section) : [], i = list.findIndex(x => x.id === b.dataset.id); if (i < 0) return;
+    const name = list[i].title || money(toNum(list[i].amount || list[i].price));
+    if (!confirm(`Видалити «${name}»?`)) return;
+    list.splice(i, 1); saveWs(); renderPanel(); toast("Видалено");
+  },
+  "fin-cur"(_, b) { wsOf("finance").cur = b.dataset.k; saveWs(); renderPanel(); },
+  "game-save"() {
+    const c = {}; for (const [k] of GAME_FIELDS) c[k] = $("gc_" + k).value.trim().slice(0, k === "idea" ? 200 : 60);
+    wsOf("game").concept = c; saveWs(); renderPanel(); toast("Концепт збережено");
+  },
+  ask(_, b) {   // готовий запит до Властеліна з розділу
+    if (!agentReady()) { toast("Спершу підключіть AI-агента в «Налаштуваннях»"); return; }
+    if (pending) return;
+    openChat(b.dataset.q); sendChat();
   },
   // «Властелін»: аналіз, рішення щодо пропозицій і керування пам'яттю
   "brain-ask"() {
@@ -1002,6 +1370,8 @@ sync = {
 };
 sync.run(true);
 loadBrain();   // лічильник нових пропозицій на кнопці «Властелін»
+renderHomeFin();
+setInterval(() => { if (section === "market" && document.visibilityState === "visible") loadMarket(true); }, 20000);
 setInterval(() => { if (document.visibilityState === "visible") { sync.run(true); loadBrain(); } }, 60000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync.run(true); });
 addEventListener("online", () => sync.run(true));

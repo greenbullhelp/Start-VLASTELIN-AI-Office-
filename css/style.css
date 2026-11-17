@@ -309,6 +309,39 @@ body.sp-open .nav{position:relative;z-index:37}
 .sp-x{flex:none;width:40px;height:40px;background:rgba(255,93,108,.06);border:1px solid rgba(255,93,108,.3);color:var(--muted);font-size:20px;line-height:1;
   clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
 .sp-x:hover{color:var(--red);border-color:var(--red)}
+/* вкладки розділу: Огляд / Технічні завдання / Вікна */
+.sp-tabs{display:flex;gap:6px;margin:0 0 14px;overflow-x:auto;scrollbar-width:none}
+.sp-tabs::-webkit-scrollbar{display:none}
+.sp-tabs button{flex:none;min-height:40px;padding:8px 14px;background:rgba(63,184,255,.06);border:1px solid rgba(63,184,255,.3);color:var(--muted);
+  font-family:inherit;font-weight:600;font-size:14px;line-height:1;cursor:pointer;clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+.sp-tabs button.on{color:var(--gold-2);border-color:var(--gold);background:rgba(232,183,90,.12)}
+.sp-tabs i{font-style:normal;font-family:var(--mono);font-size:12px;margin-left:4px;padding:1px 6px;background:rgba(63,184,255,.18);color:var(--cyan-2)}
+.sp-form.sp-col{flex-direction:column}
+.sp-form textarea{min-height:76px;resize:vertical;background:rgba(3,8,18,.85);border:1px solid rgba(63,184,255,.4);color:var(--text);padding:8px 12px;font-family:inherit;font-size:15px;line-height:1.45;outline:none}
+.sp-form textarea:focus{border-color:var(--cyan)}
+.sp-form.sp-col .btn-gold{align-self:flex-start}
+.sp-tasks{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.sp-tasks li{--c:10px;display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 12px;background:rgba(9,22,44,.6);
+  border:1px solid rgba(63,184,255,.22);border-left:3px solid var(--cyan)}
+.sp-tasks li.st-work{border-left-color:var(--amber)}
+.sp-tasks li.st-done{border-left-color:var(--green);opacity:.7}
+.sp-tasks li.st-done b{text-decoration:line-through}
+.sp-tasks .tm{min-width:0}
+.sp-tasks b{display:block;font-size:15px;overflow-wrap:anywhere}
+.sp-tasks p{margin:4px 0 0;font-size:13.5px;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+.sp-tasks small{display:block;margin-top:4px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.sp-st{min-height:40px;padding:6px 10px;background:transparent;border:1px solid rgba(63,184,255,.4);color:var(--cyan-2);font-family:inherit;font-weight:600;font-size:12.5px;line-height:1;cursor:pointer;white-space:nowrap}
+.st-work .sp-st{border-color:var(--amber);color:var(--amber)}
+.st-done .sp-st{border-color:var(--green);color:var(--green)}
+.sp-wins{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.sp-win{--c:12px;clip-path:polygon(var(--c) 0,100% 0,100% calc(100% - var(--c)),calc(100% - var(--c)) 100%,0 100%,0 var(--c));
+  background:linear-gradient(180deg,rgba(12,30,58,.85),rgba(6,14,30,.9));border:1px solid rgba(232,183,90,.35);padding:10px 12px 12px;min-width:0}
+.sp-win header{display:flex;align-items:center;gap:8px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(232,183,90,.25)}
+.sp-win header b{flex:1;min-width:0;color:var(--gold-2);font-size:15px;overflow-wrap:anywhere}
+.sp-win header .sp-x{width:34px;height:34px;font-size:18px}
+.sp-win p{margin:0;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.sp-wins .empty,.sp-tasks .empty{color:var(--muted)}
+@media (max-width:480px){.sp-tasks li{grid-template-columns:1fr auto}.sp-tasks .sp-st{grid-column:1;justify-self:start}.sp-wins{grid-template-columns:1fr}}
 .sp-projects,.sp-events,.sp-bars,.sp-status,.sp-commits,.sp-plan{list-style:none;margin:0;padding:0}
 .sp-projects{display:flex;flex-direction:column;gap:8px}
 .sp-projects li{--c:10px;display:grid;grid-template-columns:auto 1fr 52px auto;gap:12px;align-items:center;padding:10px 12px;

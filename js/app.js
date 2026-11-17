@@ -21,6 +21,8 @@ const store = {
   get(k, f) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch (e) { return f; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 };
+// Cache-busting: index.html loads app.js?v=…; pass the same version on to the 3D modules.
+const VER = new URL(import.meta.url).search;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 let toastTimer;
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2800); }
@@ -103,7 +105,7 @@ async function boot3D() {
   try {
     const gl = document.createElement("canvas").getContext("webgl2") || document.createElement("canvas").getContext("webgl");
     if (!gl) throw new Error("no webgl");
-    const [{ initOffice }, { initAssistant }] = await Promise.all([import("./office3d.js"), import("./assistant3d.js")]);
+    const [{ initOffice }, { initAssistant }] = await Promise.all([import(`./office3d.js${VER}`), import(`./assistant3d.js${VER}`)]);
     await new Promise(r => requestAnimationFrame(r));
     officeApi = initOffice($("office3d"), { stageEl: $("stage"), assistantEl: $("assistant") });
     bustApi = initAssistant($("bust"), { lite: officeApi.lite });
@@ -479,10 +481,47 @@ function placePanel() {   // на ПК панель займає простір 
     p.style.setProperty("--sp-t", Math.round(Math.max(14, r.top)) + "px");
   }
 }
-function renderPanel() { if (VIEWS[section]) $("spBody").innerHTML = VIEWS[section].render(); }
+/* ====== робочий простір розділу: технічні завдання (ТЗ) і власні вікна ======
+   vl_ws = { [section]: { tasks: [{title, desc, status, at}], wins: [{title, text, at}] } } */
+let ws = store.get("vl_ws", {});
+if (!ws || typeof ws !== "object" || Array.isArray(ws)) ws = {};
+const wsOf = s => (ws[s] = ws[s] && Array.isArray(ws[s].tasks) && Array.isArray(ws[s].wins) ? ws[s] : { tasks: [], wins: [] });
+const saveWs = () => store.set("vl_ws", ws);
+const TASK_ST = { new: "Нове", work: "В роботі", done: "Готово" };
+const TASK_NEXT = { new: "work", work: "done", done: "new" };
+let spTab = "main";
+function tabsBar(s) {
+  const w = wsOf(s), open = w.tasks.filter(t => t.status !== "done").length;
+  return `<div class="sp-tabs" role="tablist">${[["main", "Огляд", ""], ["tasks", "Технічні завдання", open], ["wins", "Вікна", w.wins.length]]
+    .map(([k, t, n]) => `<button role="tab" aria-selected="${spTab === k}" class="${spTab === k ? "on" : ""}" data-act="tab" data-k="${k}">${t}${n !== "" ? ` <i>${n}</i>` : ""}</button>`).join("")}</div>`;
+}
+function tasksView(s) {
+  const w = wsOf(s);
+  return `<section class="sp-box"><h3>Нове технічне завдання</h3>
+    <div class="sp-form sp-col"><input id="spTTitle" placeholder="Назва завдання" maxlength="100" data-enter="t-add" aria-label="Назва завдання">
+    <textarea id="spTDesc" rows="3" maxlength="2000" placeholder="Опис: що зробити і як зрозуміти, що готово" aria-label="Опис завдання"></textarea>
+    <button class="btn-gold" data-act="t-add">+ Додати завдання</button></div></section>
+    <ul class="sp-tasks">${w.tasks.map((t, i) => `<li class="st-${esc(t.status)}"><div class="tm"><b>${esc(t.title)}</b>${t.desc ? `<p>${esc(t.desc)}</p>` : ""}<small>${new Date(t.at).toLocaleDateString("uk-UA")}</small></div>
+      <button class="sp-st" data-act="t-st" data-i="${i}" title="Змінити статус">${TASK_ST[t.status] || TASK_ST.new}</button>
+      <button class="sp-x" data-act="t-del" data-i="${i}" aria-label="Видалити завдання ${esc(t.title)}">×</button></li>`).join("") || `<li class="empty">Технічних завдань поки немає — додайте перше.</li>`}</ul>
+    ${note("Статус змінюється натисканням: Нове → В роботі → Готово. Завдання зберігаються в цьому браузері; пізніше (план «Апгрейд») їх зможуть брати в роботу агенти.")}`;
+}
+function winsView(s) {
+  const w = wsOf(s);
+  return `<section class="sp-box"><h3>Нове вікно</h3>
+    <div class="sp-form sp-col"><input id="spWTitle" placeholder="Назва вікна" maxlength="60" data-enter="w-add" aria-label="Назва вікна">
+    <textarea id="spWText" rows="3" maxlength="2000" placeholder="Вміст: нотатки, посилання, контакти, ідеї" aria-label="Вміст вікна"></textarea>
+    <button class="btn-gold" data-act="w-add">+ Додати вікно</button></div></section>
+    <div class="sp-wins">${w.wins.map((x, i) => `<article class="sp-win"><header><b>${esc(x.title)}</b><button class="sp-x" data-act="w-del" data-i="${i}" aria-label="Видалити вікно ${esc(x.title)}">×</button></header><p>${esc(x.text || "")}</p></article>`).join("") || `<p class="empty">Вікон поки немає — додайте перше.</p>`}</div>`;
+}
+function renderPanel() {
+  if (!VIEWS[section]) return;
+  $("spBody").innerHTML = tabsBar(section) + (spTab === "tasks" ? tasksView(section) : spTab === "wins" ? winsView(section) : VIEWS[section].render());
+}
 function refreshPanel(...which) { if (section !== "home" && which.includes(section)) renderPanel(); }
 function openPanel(slug) {
   const v = VIEWS[slug], first = section === "home";
+  if (section !== slug) spTab = "main";
   section = slug; setActive(slug);
   const name = Object.keys(SLUGS).find(k => SLUGS[k] === slug);
   const code = document.querySelector(`.menu button[data-s="${name}"] code`);
@@ -522,11 +561,31 @@ const PANEL_ACTS = {
   recheck() { checked = false; agentMsg = ""; commitsAt = 0; renderPanel(); checkStatus(); },
   settings() { setActive("settings"); openSettings(); },
   report() { makeReport(); },
-  voice() { go("home"); startVoice(); }
+  voice() { go("home"); startVoice(); },
+  tab(i, b) { spTab = b.dataset.k; renderPanel(); $("spBody").scrollTop = 0; },
+  "t-add"() {
+    const title = $("spTTitle").value.trim(); if (!title) { $("spTTitle").focus(); return; }
+    wsOf(section).tasks.unshift({ title: title.slice(0, 100), desc: $("spTDesc").value.trim().slice(0, 2000), status: "new", at: Date.now() });
+    saveWs(); renderPanel(); toast("Завдання додано");
+  },
+  "t-st"(i) { const t = wsOf(section).tasks[i]; if (!t) return; t.status = TASK_NEXT[t.status] || "work"; saveWs(); renderPanel(); },
+  "t-del"(i) {
+    const list = wsOf(section).tasks, t = list[i]; if (!t || !confirm(`Видалити завдання «${t.title}»?`)) return;
+    list.splice(i, 1); saveWs(); renderPanel(); toast("Завдання видалено");
+  },
+  "w-add"() {
+    const title = $("spWTitle").value.trim(); if (!title) { $("spWTitle").focus(); return; }
+    wsOf(section).wins.push({ title: title.slice(0, 60), text: $("spWText").value.trim().slice(0, 2000), at: Date.now() });
+    saveWs(); renderPanel(); toast("Вікно додано");
+  },
+  "w-del"(i) {
+    const list = wsOf(section).wins, x = list[i]; if (!x || !confirm(`Видалити вікно «${x.title}»?`)) return;
+    list.splice(i, 1); saveWs(); renderPanel(); toast("Вікно видалено");
+  }
 };
 $("spBody").addEventListener("click", e => {
   const b = e.target.closest("[data-act]"); if (!b || b.type === "range") return;
-  const f = PANEL_ACTS[b.dataset.act]; if (f) f(+b.dataset.i);
+  const f = PANEL_ACTS[b.dataset.act]; if (f) f(+b.dataset.i, b);
 });
 $("spBody").addEventListener("keydown", e => { const a = e.target.dataset.enter; if (e.key === "Enter" && a) PANEL_ACTS[a](); });
 $("spBody").addEventListener("input", e => {   // повзунок: оновлюємо віджет і підпис без перебудови панелі

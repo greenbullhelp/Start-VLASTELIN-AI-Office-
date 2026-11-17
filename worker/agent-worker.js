@@ -87,6 +87,19 @@ function json(data, status, headers) {
   return new Response(JSON.stringify(data), { status, headers: { ...headers, 'Content-Type': 'application/json; charset=utf-8' } });
 }
 
+// Copy-paste from notes/messengers brings spaces, zero-width chars, quotes or a "NAME=" prefix.
+// Keep only the sk-ant-... token itself; anything else is reported, never logged verbatim.
+function cleanKey(raw) {
+  const s = String(raw || '').replace(/[\s ​-‍⁠﻿"'`«»“”]/g, '');
+  const m = s.match(/sk-ant-[A-Za-z0-9_-]{20,}/);
+  return m ? m[0] : '';
+}
+function keyDiagnostics(raw) {
+  const s = String(raw || '');
+  const odd = [...new Set([...s].filter(c => !/[A-Za-z0-9_-]/.test(c)).map(c => 'U+' + c.codePointAt(0).toString(16).padStart(4, '0')))];
+  return { length: s.length, startsWithSkAnt: s.trim().startsWith('sk-ant-'), containsSkAnt: s.includes('sk-ant-'), oddChars: odd };
+}
+
 export default {
   async fetch(request, env) {
     const allowed = (env.ALLOWED_ORIGINS || 'https://greenbullhelp.github.io').split(',').map(s => s.trim()).filter(Boolean);
@@ -109,8 +122,11 @@ export default {
     if (env.ACCESS_CODE && request.headers.get('X-Access-Code') !== env.ACCESS_CODE) return json({ error: 'Невірний код доступу' }, 401, cors);
     if (!env.ANTHROPIC_API_KEY) return json({ error: 'На сервері не задано ANTHROPIC_API_KEY' }, 500, cors);
     // Copy-paste often adds spaces/newlines; such a header value makes fetch throw before any request is sent.
-    const apiKey = String(env.ANTHROPIC_API_KEY).trim();
-    if (/[^\x21-\x7e]/.test(apiKey)) return json({ error: 'Ключ ANTHROPIC_API_KEY містить пробіли або недопустимі символи — вставте його в Cloudflare заново' }, 500, cors);
+    const apiKey = cleanKey(env.ANTHROPIC_API_KEY);
+    if (!apiKey) {
+      console.error('Bad ANTHROPIC_API_KEY:', keyDiagnostics(env.ANTHROPIC_API_KEY));
+      return json({ error: 'Ключ ANTHROPIC_API_KEY має неправильний формат (очікується sk-ant-...) — вставте його в Cloudflare заново' }, 500, cors);
+    }
 
     let body;
     try { body = await request.json(); } catch { return json({ error: 'Некоректний JSON' }, 400, cors); }
@@ -129,6 +145,7 @@ export default {
       return json({ error: 'Не вдалося зв\'язатися з Claude API' }, 502, cors);
     }
     const data = await res.json().catch(() => ({}));
+    if (!res.ok) console.error('Claude API error', res.status, data?.error?.type, data?.error?.message);
     if (!res.ok) return json({ error: data?.error?.message || `Claude API: помилка ${res.status}` }, 502, cors);
 
     const blocks = Array.isArray(data.content) ? data.content : [];

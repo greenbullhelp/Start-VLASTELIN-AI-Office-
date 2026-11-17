@@ -1,10 +1,10 @@
 import worker from '../worker/agent-worker.js';
 let sent;
 globalThis.fetch = async (url, opts) => { sent = JSON.parse(opts.body); return new Response(JSON.stringify({ model: 'claude-sonnet-5-5', content: [{ type: 'text', text: 'Створив проєкт.' }, { type: 'tool_use', id: 't1', name: 'create_project', input: { name: 'Логістика', progress: 5 } }, { type: 'tool_use', id: 't2', name: 'hack', input: {} }], usage: {} }), { status: 200 }); };
-const env = { ANTHROPIC_API_KEY: 'k', ACCESS_CODE: 'secret' };
+const env = { ANTHROPIC_API_KEY: 'sk-ant-test-0123456789abcdefghij', ACCESS_CODE: 'secret' };
 const O = 'https://greenbullhelp.github.io';
 const mk = (h = {}, body) => new Request('https://w.dev/chat', { method: 'POST', headers: { Origin: O, 'Content-Type': 'application/json', ...h }, body: JSON.stringify(body) });
-const ok = (c, m) => console.log((c ? 'PASS ' : 'FAIL ') + m);
+const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
 let r = await worker.fetch(new Request('https://w.dev/health', { headers: { Origin: O } }), env); let j = await r.json();
 ok(r.status === 200 && j.protected && j.configured, 'health');
 r = await worker.fetch(new Request('https://w.dev/chat', { method: 'OPTIONS', headers: { Origin: O } }), env); ok(r.status === 204 && r.headers.get('Access-Control-Allow-Origin') === O, 'preflight');
@@ -21,5 +21,8 @@ r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'u
 ok(r.status === 502 && j.error.includes('invalid'), 'upstream error passed');
 r = await worker.fetch(mk({}, { messages: [{ role: 'user', content: 'hi' }] }), { ACCESS_CODE: 'secret' }); ok(r.status === 401, 'code required before key check');
 let hdr; globalThis.fetch = async (url, opts) => { hdr = opts.headers['x-api-key']; return new Response(JSON.stringify({ content: [{ type: 'text', text: 'ok' }] }), { status: 200 }); };
-r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), { ...env, ANTHROPIC_API_KEY: ' sk-ant-x\r\n' }); ok(r.status === 200 && hdr === 'sk-ant-x', 'key whitespace trimmed');
-r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), { ...env, ANTHROPIC_API_KEY: 'sk-ant x' }); j = await r.json(); ok(r.status === 500 && j.error.includes('недопустимі'), 'bad key chars reported');
+r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), { ...env, ANTHROPIC_API_KEY: ' sk-ant-api03-abcdefghij​_KLMNOPQRST-xyz\r\n' }); ok(r.status === 200 && hdr === 'sk-ant-api03-abcdefghij_KLMNOPQRST-xyz', 'key whitespace trimmed');
+r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), { ...env, ANTHROPIC_API_KEY: 'ANTHROPIC_API_KEY="sk-ant-api03-abcdefghij KLMNOPQRST"' }); ok(r.status === 200 && hdr === 'sk-ant-api03-abcdefghijKLMNOPQRST', 'key prefix and quotes stripped');
+const origErr = console.error; console.error = () => {};
+r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), { ...env, ANTHROPIC_API_KEY: 'мій ключ' }); j = await r.json(); ok(r.status === 500 && j.error.includes('формат'), 'bad key reported');
+console.error = origErr;

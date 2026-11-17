@@ -16,6 +16,7 @@ j = await r.json();
 ok(r.status === 200 && j.reply === 'Створив проєкт.' && j.actions.length === 1 && j.actions[0].name === 'create_project', 'chat + actions filtered');
 ok(sent.messages.length === 1 && sent.messages[0].role === 'user' && sent.messages[0].content.includes('швидко'), 'history normalized');
 ok(sent.tools.length === 3 && sent.system.includes('Djek') && sent.model === 'claude-sonnet-5-5', 'request built');
+ok(sent.system.includes('ПРАВИЛА БЕЗПЕКИ') && sent.system.includes('main') && sent.system.includes('ЕКОНОМІЯ ТОКЕНІВ') && sent.max_tokens === 600, 'rules and token limits in request');
 globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'invalid x-api-key' } }), { status: 401 });
 r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), env); j = await r.json();
 ok(r.status === 502 && j.error.includes('invalid'), 'upstream error passed');

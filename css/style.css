@@ -469,3 +469,18 @@ body.eco .spanel,body.eco .sp-dim{animation:none}
 @keyframes micPulse{50%{box-shadow:0 0 4px rgba(232,183,90,.3)}}
 .chatwin.listening .chat-input textarea{border-color:var(--gold)}
 @media (prefers-reduced-motion:reduce){.chat-btn.mic-btn.live{animation:none}}
+
+/* ===== «Властелін»: пропозиції і пам'ять ===== */
+.menu button code.hot{color:var(--gold-2);opacity:1;font-weight:700}
+.sp-props li{grid-template-columns:1fr auto;border-left-color:var(--gold)}
+.sp-props li.pr-approved{border-left-color:var(--green);opacity:.75}
+.sp-props li.pr-rejected{border-left-color:var(--red);opacity:.6}
+.pr-approved .sp-st{border-color:var(--green);color:var(--green)}
+.pr-rejected .sp-st{border-color:var(--red);color:var(--red)}
+.sp-props p,.sp-mem p{margin:4px 0;color:var(--muted);font-size:13.5px;line-height:1.45;white-space:pre-line}
+.sp-tasks small{color:var(--muted);font-size:12px}
+.pr-btns{display:flex;flex-direction:column;gap:6px}
+.sp-ask{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.sp-ask span{color:var(--muted);font-size:13px;flex:1;min-width:180px}
+.sp-form select{min-height:42px;background:rgba(3,8,18,.85);border:1px solid rgba(63,184,255,.4);color:var(--text);padding:8px 10px;font-size:15px;color-scheme:dark}
+@media (max-width:480px){.sp-props li{grid-template-columns:1fr}.pr-btns{flex-direction:row}.pr-btns button{flex:1}}

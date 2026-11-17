@@ -57,11 +57,97 @@ const today = () => new Date().toISOString().slice(0, 10);
 /* ====== Спільне сховище (D1): одна JSON-колекція на ключ, «перемагає новіший» за часом зміни ====== */
 const STATE_KEYS = ['projects', 'events', 'ws', 'history'];
 const MAX_STATE_BYTES = 256 * 1024;
-let schemaReady = false;
+const schemaReady = new WeakSet();
 async function ensureSchema(db) {
-  if (schemaReady) return;
+  if (schemaReady.has(db)) return;
   await db.prepare('CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v TEXT NOT NULL, t INTEGER NOT NULL)').run();
-  schemaReady = true;
+  await db.prepare('CREATE TABLE IF NOT EXISTS memory (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, cat TEXT NOT NULL DEFAULT \'fact\', created INTEGER NOT NULL, updated INTEGER NOT NULL)').run();
+  await db.prepare('CREATE TABLE IF NOT EXISTS proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, details TEXT NOT NULL, section TEXT NOT NULL, cost TEXT NOT NULL, status TEXT NOT NULL DEFAULT \'new\', created INTEGER NOT NULL, decided INTEGER)').run();
+  schemaReady.add(db);
+}
+
+/* ====== Крок 2: довготривала пам'ять ====== */
+const MEM_CATS = ['fact', 'preference', 'decision', 'goal'];
+const MEM_MAX = 200, MEM_TEXT = 300, MEM_IN_PROMPT = 60;
+async function listMemory(db, limit = MEM_MAX) {
+  await ensureSchema(db);
+  const { results = [] } = await db.prepare('SELECT id, text, cat, created, updated FROM memory ORDER BY id DESC LIMIT ?1').bind(limit).all();
+  return results;
+}
+async function addMemory(db, text, cat = 'fact') {
+  text = String(text || '').trim().slice(0, MEM_TEXT);
+  if (!text) return { error: 'Порожній запис' };
+  if (/sk-ant-|ghp_|github_pat_|password|пароль\s*[:=]/i.test(text)) return { error: 'Секрети в пам\'ять не записуються' };
+  await ensureSchema(db);
+  const n = await db.prepare('SELECT COUNT(*) AS n FROM memory').first();
+  if (n && n.n >= MEM_MAX) return { error: `Пам'ять заповнена (${MEM_MAX}). Спершу видаліть застарілі записи.` };
+  const now = Date.now();
+  const r = await db.prepare('INSERT INTO memory (text, cat, created, updated) VALUES (?1, ?2, ?3, ?3)').bind(text, MEM_CATS.includes(cat) ? cat : 'fact', now).run();
+  return { id: r.meta && r.meta.last_row_id, text };
+}
+async function editMemory(db, id, text) {
+  text = String(text || '').trim().slice(0, MEM_TEXT);
+  if (!text) return { error: 'Порожній запис' };
+  await ensureSchema(db);
+  const r = await db.prepare('UPDATE memory SET text = ?1, updated = ?2 WHERE id = ?3').bind(text, Date.now(), Number(id)).run();
+  return r.meta && r.meta.changes ? { id: Number(id), text } : { error: 'Запис не знайдено' };
+}
+async function deleteMemory(db, id) {
+  await ensureSchema(db);
+  const row = await db.prepare('SELECT text FROM memory WHERE id = ?1').bind(Number(id)).first();
+  if (!row) return { error: 'Запис не знайдено' };
+  await db.prepare('DELETE FROM memory WHERE id = ?1').bind(Number(id)).run();
+  return { id: Number(id), text: row.text };
+}
+
+/* ====== Крок 4: пропозиції (виконуються лише після схвалення керівником) ====== */
+const SECTIONS = { business: 'Бізнес-центр', projects: 'Проєкти', finance: 'Фінанси', dev: 'Розробка', media: 'Медіацентр', comms: 'Комунікації', analytics: 'Аналітика' };
+const PROP_OPEN_MAX = 30;
+async function listProposals(db) {
+  await ensureSchema(db);
+  const { results = [] } = await db.prepare("SELECT id, title, details, section, cost, status, created, decided FROM proposals ORDER BY CASE status WHEN 'new' THEN 0 ELSE 1 END, id DESC LIMIT 60").all();
+  return results;
+}
+async function addProposal(db, i = {}) {
+  const title = String(i.title || '').trim().slice(0, 120), details = String(i.details || '').trim().slice(0, 1500);
+  if (!title || !details) return { error: 'Потрібні назва і опис' };
+  await ensureSchema(db);
+  const open = await db.prepare("SELECT COUNT(*) AS n FROM proposals WHERE status = 'new'").first();
+  if (open && open.n >= PROP_OPEN_MAX) return { error: 'Забагато нерозглянутих пропозицій — дочекайся рішень керівника' };
+  const dup = await db.prepare("SELECT id FROM proposals WHERE status = 'new' AND title = ?1").bind(title).first();
+  if (dup) return { error: 'Така пропозиція вже чекає рішення', id: dup.id };
+  const section = SECTIONS[i.section] ? i.section : 'business';
+  const cost = String(i.cost || 'не оцінено').trim().slice(0, 60);
+  const r = await db.prepare('INSERT INTO proposals (title, details, section, cost, created) VALUES (?1, ?2, ?3, ?4, ?5)').bind(title, details, section, cost, Date.now()).run();
+  return { id: r.meta && r.meta.last_row_id, title, section, cost };
+}
+async function decideProposal(db, id, decision) {
+  if (!['approved', 'rejected'].includes(decision)) return { status: 400, data: { error: 'Рішення: approved або rejected' } };
+  await ensureSchema(db);
+  const row = await db.prepare('SELECT id, title, details, section, cost, status FROM proposals WHERE id = ?1').bind(Number(id)).first();
+  if (!row) return { status: 404, data: { error: 'Пропозицію не знайдено' } };
+  if (row.status !== 'new') return { status: 409, data: { error: 'Рішення вже ухвалено', proposal: row } };
+  await db.prepare("UPDATE proposals SET status = ?1, decided = ?2 WHERE id = ?3 AND status = 'new'").bind(decision, Date.now(), row.id).run();
+  return { status: 200, data: { proposal: { ...row, status: decision } } };
+}
+
+/* ====== Крок 3: аналіз — стан GitHub лише на читання ====== */
+async function githubStatus(env) {
+  const repo = env.GITHUB_REPO || 'greenbullhelp/Start-VLASTELIN-AI-Office-';
+  const h = { 'User-Agent': 'vlastelin-agent', Accept: 'application/vnd.github+json' };
+  if (env.GITHUB_TOKEN) h.Authorization = 'Bearer ' + env.GITHUB_TOKEN;
+  const get = async p => { const r = await fetch('https://api.github.com/repos/' + repo + p, { headers: h }); if (!r.ok) throw new Error('GitHub ' + r.status); return r.json(); };
+  try {
+    const [info, commits, runs] = await Promise.all([get(''), get('/commits?per_page=5'), get('/actions/runs?per_page=3').catch(() => ({ workflow_runs: [] }))]);
+    const lines = [
+      `Репозиторій ${repo}: відкритих задач/PR ${info.open_issues_count}, останній push ${String(info.pushed_at || '').slice(0, 16).replace('T', ' ')}.`,
+      'Останні зміни: ' + (commits || []).map(c => `${String(c.commit.author.date).slice(0, 10)} ${String(c.commit.message).split('\n')[0].slice(0, 80)}`).join('; '),
+      'Автоматичні перевірки: ' + ((runs.workflow_runs || []).map(r => `${r.name}: ${r.conclusion || r.status}`).join('; ') || 'немає запусків')
+    ];
+    return lines.join('\n');
+  } catch (e) {
+    return 'Не вдалося отримати дані GitHub (' + (e.message || 'помилка') + '). Скажи керівнику чесно, що дані зараз недоступні.';
+  }
 }
 async function readState(db) {
   await ensureSchema(db);
@@ -140,20 +226,61 @@ const TOOLS = [
     }
   }
 ];
+// Tools the worker executes itself (memory, proposals, read-only GitHub). TOOLS above run in the owner's browser.
+const SERVER_TOOLS = [
+  {
+    name: 'remember',
+    description: 'Запам\'ятати важливий довготривалий факт про керівника, його бізнес, вподобання, рішення чи цілі. Не для дрібниць і не для того, що вже є в пам\'яті. Ніколи не записуй секрети.',
+    input_schema: { type: 'object', properties: {
+      text: { type: 'string', description: 'Короткий самодостатній факт, до 300 символів' },
+      category: { type: 'string', enum: MEM_CATS, description: 'fact — факт, preference — вподобання, decision — рішення, goal — ціль' }
+    }, required: ['text'] }
+  },
+  {
+    name: 'forget',
+    description: 'Видалити запис із пам\'яті за його номером (коли керівник просить забути або факт застарів).',
+    input_schema: { type: 'object', properties: { id: { type: 'integer', description: 'Номер запису з розділу «Пам\'ять»' } }, required: ['id'] }
+  },
+  {
+    name: 'github_status',
+    description: 'Отримати стан репозиторію сайту на GitHub лише для читання: останні зміни, кількість відкритих задач, результати автоматичних перевірок. Використовуй для аналізу розробки.',
+    input_schema: { type: 'object', properties: {} }
+  },
+  {
+    name: 'propose',
+    description: 'Запропонувати керівнику задачу для покращення офісу, сайту чи бізнесу. Пропозиція лише чекає рішення: керівник сам натисне «Схвалити» або «Відхилити». Пропонуй тільки корисне й конкретне, не дублюй відкриті пропозиції.',
+    input_schema: { type: 'object', properties: {
+      title: { type: 'string', description: 'Коротка назва задачі (до 120 символів)' },
+      details: { type: 'string', description: 'Що зробити і як зрозуміти, що готово (критерії)' },
+      section: { type: 'string', enum: Object.keys(SECTIONS), description: 'Розділ офісу, до якого належить задача' },
+      cost: { type: 'string', description: 'Орієнтовна вартість виконання агентом, напр. "~$0.50" або "безкоштовно (вручну)"' }
+    }, required: ['title', 'details', 'section', 'cost'] }
+  }
+];
+const ALL_TOOLS = [...TOOLS, ...SERVER_TOOLS];
+const MAX_TOOL_ROUNDS = 3;
 
-function systemPrompt(ctx = {}) {
+function systemPrompt(ctx = {}, extra = {}) {
   const projects = Array.isArray(ctx.projects) ? ctx.projects.slice(0, 50) : [];
   const events = Array.isArray(ctx.events) ? ctx.events.slice(0, 50) : [];
+  const tasks = Array.isArray(ctx.tasks) ? ctx.tasks.slice(0, 40) : [];
+  const memory = extra.memory || [], open = (extra.proposals || []).filter(p => p.status === 'new');
   return [
     `Ти — Властелін, AI-асистент віртуального офісу VLASTELIN. Твій керівник: ${String(ctx.user || 'керівник').slice(0, 60)}.`,
     'Відповідай українською (або мовою керівника), по суті, простим текстом без markdown-розмітки (без **, #, таблиць): відповідь показується у вікні чату й може озвучуватися голосом. Для списків використовуй рядки, що починаються з «• ».',
     'Якщо керівник надіслав фото — опиши головне, що на ньому важливо для його запиту, і запропонуй наступний крок.',
     'Ти можеш керувати офісом через інструменти: створювати проєкти, змінювати їх прогрес і додавати події в календар. Використовуй їх, коли керівник про це просить, і коротко підтверджуй дію.',
     'Якщо чогось не можеш зробити — чесно скажи і запропонуй, що можна зробити замість цього.',
+    'ПАМ\'ЯТЬ: у тебе є довготривала пам\'ять (нижче). Коли керівник каже «запам\'ятай», повідомляє важливий факт, вподобання, рішення чи ціль — виклич remember і коротко скажи, що запам\'ятав. Коли просить забути або факт застарів — forget. Не записуй дрібниць, дублікатів і секретів.',
+    'АНАЛІЗ: аналізуй на основі даних нижче (проєкти, події, технічні завдання, пам\'ять) і, коли йдеться про сайт чи розробку, github_status. Давай висновки й 1–3 конкретні наступні кроки. Не вигадуй цифр, яких немає.',
+    'ПРОПОЗИЦІЇ: якщо бачиш корисне покращення або керівник просить ідеї — виклич propose (з оцінкою вартості) замість того, щоб робити самому. Не більше 3 пропозицій за раз. Скажи, що пропозиції чекають рішення в розділі «Пропозиції».',
     RULES,
     `Зараз: ${String(ctx.now || '').slice(0, 60)}. Місто: ${String(ctx.city || '').slice(0, 60)}.`,
     `Проєкти: ${projects.map(p => `${String(p.name).slice(0, 80)} (${p.progress | 0}%)`).join('; ') || 'немає'}.`,
-    `Події сьогодні: ${events.map(e => `${String(e.t).slice(0, 5)} ${String(e.title).slice(0, 80)}`).join('; ') || 'немає'}.`
+    `Події сьогодні: ${events.map(e => `${String(e.t).slice(0, 5)} ${String(e.title).slice(0, 80)}`).join('; ') || 'немає'}.`,
+    `Відкриті технічні завдання: ${tasks.map(t => `[${SECTIONS[t.section] || t.section}] ${String(t.title).slice(0, 80)} (${t.status === 'work' ? 'в роботі' : 'нове'})`).join('; ') || 'немає'}.`,
+    `Пам'ять (№ — запис): ${memory.map(m => `№${m.id} ${m.text}`).join(' | ') || 'порожня'}.`,
+    `Пропозиції, що чекають рішення: ${open.map(p => `№${p.id} ${p.title}`).join('; ') || 'немає'}.`
   ].join('\n');
 }
 
@@ -196,7 +323,7 @@ export default {
     const okOrigin = allowed.includes(origin);
     const cors = {
       'Access-Control-Allow-Origin': okOrigin ? origin : allowed[0],
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-Access-Code',
       'Vary': 'Origin'
     };
@@ -207,20 +334,35 @@ export default {
       return json({ ok: true, service: 'vlastelin-agent', model: env.MODEL || DEFAULT_MODEL, modelFast: env.MODEL_FAST || DEFAULT_FAST,
         budget: Boolean(env.BUDGET), storage: Boolean(env.DB), protected: Boolean(env.ACCESS_CODE), configured: Boolean(env.ANTHROPIC_API_KEY) }, 200, cors);
     }
-    const isState = url.pathname.endsWith('/state');
-    if (!(isState && (request.method === 'GET' || request.method === 'PUT')) && request.method !== 'POST') return json({ error: 'Метод не підтримується' }, 405, cors);
+    const path = url.pathname.replace(/\/+$/, '');
+    const route = ['state', 'memory', 'proposals'].find(r => path.endsWith('/' + r)) || 'chat';
+    const METHODS = { state: ['GET', 'PUT'], memory: ['GET', 'POST', 'PUT', 'DELETE'], proposals: ['GET', 'POST'], chat: ['POST'] };
+    if (!METHODS[route].includes(request.method)) return json({ error: 'Метод не підтримується' }, 405, cors);
     if (!okOrigin) return json({ error: 'Доступ дозволено лише з сайту офісу' }, 403, cors);
     if (env.ACCESS_CODE && request.headers.get('X-Access-Code') !== env.ACCESS_CODE) return json({ error: 'Невірний код доступу' }, 401, cors);
 
-    if (isState) {
+    if (route !== 'chat') {
       if (!env.DB) return json({ error: 'Сховище не підключене на сервері' }, 503, cors);
       try {
-        if (request.method === 'GET') return json({ state: await readState(env.DB), now: Date.now() }, 200, cors);
-        let b; try { b = await request.json(); } catch { return json({ error: 'Некоректний JSON' }, 400, cors); }
-        const r = await writeState(env.DB, b);
+        let b = {};
+        if (request.method !== 'GET' && request.method !== 'DELETE') { try { b = await request.json(); } catch { return json({ error: 'Некоректний JSON' }, 400, cors); } }
+        if (route === 'state') {
+          if (request.method === 'GET') return json({ state: await readState(env.DB), now: Date.now() }, 200, cors);
+          const r = await writeState(env.DB, b);
+          return json(r.data, r.status, cors);
+        }
+        if (route === 'memory') {
+          if (request.method === 'GET') return json({ memory: await listMemory(env.DB), max: MEM_MAX }, 200, cors);
+          const r = request.method === 'POST' ? await addMemory(env.DB, b.text, b.category)
+            : request.method === 'PUT' ? await editMemory(env.DB, b.id, b.text)
+            : await deleteMemory(env.DB, url.searchParams.get('id'));
+          return json(r, r.error ? 400 : 200, cors);
+        }
+        if (request.method === 'GET') return json({ proposals: await listProposals(env.DB) }, 200, cors);
+        const r = await decideProposal(env.DB, b.id, b.decision);
         return json(r.data, r.status, cors);
       } catch (e) {
-        console.error('State storage error:', e && e.message);
+        console.error('Storage error:', route, e && e.message);
         return json({ error: 'Помилка сховища' }, 500, cors);
       }
     }
@@ -255,36 +397,76 @@ export default {
     const images = cleanImages(body.images);
     if (images.length) last.content = [...images, { type: 'text', text: last.content }];
 
-    let res;
-    try {
-      res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model, max_tokens: tier.maxTokens, output_config: { effort: tier.effort },
-          system: systemPrompt(body.context), tools: TOOLS, messages })
-      });
-    } catch (e) {
-      console.error('Claude API fetch failed:', e && e.message);
-      return json({ error: 'Не вдалося зв\'язатися з Claude API' }, 502, cors);
-    }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) console.error('Claude API error', res.status, data?.error?.type, data?.error?.message);
-    if (!res.ok) return json({ error: data?.error?.message || `Claude API: помилка ${res.status}` }, 502, cors);
+    // Memory and open proposals go into the prompt (compact), so the assistant "remembers" across chats and devices.
+    let memory = [], proposals = [];
+    if (env.DB) { try { [memory, proposals] = await Promise.all([listMemory(env.DB, MEM_IN_PROMPT), listProposals(env.DB)]); } catch (e) { console.error('Memory read failed:', e && e.message); } }
+    const system = systemPrompt(body.context, { memory, proposals });
+    const tools = env.DB ? ALL_TOOLS : [...TOOLS, SERVER_TOOLS.find(t => t.name === 'github_status')];
 
-    // Count what this request cost (also when the reply is unusable — tokens were spent anyway).
-    const used = data.model || model;
-    const cost = costUsd(used, data.usage);
+    const actions = [], notes = [], texts = [];
+    let cost = 0, used = model, data = {}, changed = { memory: false, proposals: false };
+    // Server-side tools: executed here; their result goes back to Claude only when it is needed
+    // (data to read, or no text answer yet). This keeps most turns to a single API call.
+    async function runServerTool(b) {
+      const i = b.input || {};
+      if (b.name === 'remember') { const r = await addMemory(env.DB, i.text, i.category); if (!r.error) { changed.memory = true; notes.push({ type: 'remember', text: r.text, id: r.id }); } return r.error || `Запам'ятав (№${r.id}).`; }
+      if (b.name === 'forget') { const r = await deleteMemory(env.DB, i.id); if (!r.error) { changed.memory = true; notes.push({ type: 'forget', text: r.text, id: r.id }); } return r.error || `Забув №${r.id}.`; }
+      if (b.name === 'propose') { const r = await addProposal(env.DB, i); if (!r.error) { changed.proposals = true; notes.push({ type: 'propose', text: r.title, id: r.id, cost: r.cost }); } return r.error || `Пропозицію №${r.id} додано, чекає рішення керівника.`; }
+      if (b.name === 'github_status') return githubStatus(env);
+      return 'Невідомий інструмент';
+    }
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      let res;
+      try {
+        res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({ model, max_tokens: tier.maxTokens, output_config: { effort: tier.effort }, system, tools, messages })
+        });
+      } catch (e) {
+        console.error('Claude API fetch failed:', e && e.message);
+        if (round === 0) return json({ error: 'Не вдалося зв\'язатися з Claude API' }, 502, cors);
+        break;
+      }
+      data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error('Claude API error', res.status, data?.error?.type, data?.error?.message);
+        if (round === 0) return json({ error: data?.error?.message || `Claude API: помилка ${res.status}` }, 502, cors);
+        break;
+      }
+      // Count what each call cost (also when the reply is unusable — tokens were spent anyway).
+      used = data.model || model;
+      cost += costUsd(used, data.usage);
+
+      const blocks = Array.isArray(data.content) ? data.content : [];
+      const text = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+      if (text) texts.push(text);
+      const uses = blocks.filter(b => b.type === 'tool_use');
+      if (!uses.length) break;
+      const results = [], before = actions.length + notes.length;
+      let readData = false;
+      for (const b of uses) {
+        let out;
+        if (TOOLS.some(t => t.name === b.name)) { actions.push({ name: b.name, input: b.input || {} }); out = 'Буде виконано на сайті керівника.'; }
+        else if (SERVER_TOOLS.some(t => t.name === b.name)) { out = await runServerTool(b); if (b.name === 'github_status') readData = true; }
+        else out = 'Невідомий інструмент';
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: String(out) });
+      }
+      // Ask Claude again only when it must read data, or nothing usable came back (e.g. a tool error with no text).
+      const needMore = readData || (!text && actions.length + notes.length === before);
+      if (!needMore || data.stop_reason !== 'tool_use' || round === MAX_TOOL_ROUNDS - 1) break;
+      messages.push({ role: 'assistant', content: blocks }, { role: 'user', content: results });
+    }
+
     spent += cost;
     if (env.BUDGET) {
       const save = env.BUDGET.put(dayKey, String(spent), { expirationTtl: 3 * 86400 });
       if (ctx && ctx.waitUntil) ctx.waitUntil(save); else await save;
     }
-
-    const blocks = Array.isArray(data.content) ? data.content : [];
-    let reply = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-    const actions = blocks.filter(b => b.type === 'tool_use' && TOOLS.some(t => t.name === b.name)).map(b => ({ name: b.name, input: b.input || {} }));
+    let reply = texts.join('\n').trim();
     if (data.stop_reason === 'refusal') reply = 'Не можу допомогти з цим запитом. Спробуйте сформулювати інакше.';
-    else if (!reply && !actions.length && data.stop_reason === 'max_tokens') reply = 'Відповідь вийшла задовгою й обірвалася. Уточніть запит або увімкніть «Глибокий аналіз».';
-    return json({ reply, actions, model: used, tier: tierName, cost, budget: env.BUDGET ? { spent, limit } : null }, 200, cors);
+    else if (!reply && !actions.length && !notes.length && data.stop_reason === 'max_tokens') reply = 'Відповідь вийшла задовгою й обірвалася. Уточніть запит або увімкніть «Глибокий аналіз».';
+    else if (!reply && notes.length) reply = notes.map(n => n.type === 'remember' ? `Запам'ятав: ${n.text}` : n.type === 'forget' ? `Забув: ${n.text}` : `Пропозиція «${n.text}» чекає вашого рішення.`).join('\n');
+    return json({ reply, actions, notes, changed, model: used, tier: tierName, cost, budget: env.BUDGET ? { spent, limit } : null }, 200, cors);
   }
 };

@@ -129,7 +129,9 @@ async function askAgent(text, imgs = []) {
   say(`<span class="thinking"><i></i><i></i><i></i></span> <span class="muted">Думаю…</span>`, 0);
   bustApi && bustApi.think(true);
   try {
-    const ctx = { user: CONFIG.userName, city: CONFIG.city, now: new Date().toLocaleString("uk-UA"), projects, events };
+    const tasks = Object.entries(ws).flatMap(([s, w]) => (w && Array.isArray(w.tasks) ? w.tasks : [])
+      .filter(t => t.status !== "done").map(t => ({ section: s, title: t.title, status: t.status }))).slice(0, 40);
+    const ctx = { user: CONFIG.userName, city: CONFIG.city, now: new Date().toLocaleString("uk-UA"), projects, events, tasks };
     const r = await fetch(agent.url.replace(/\/+$/, "") + "/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Access-Code": agent.code || "" },
@@ -143,6 +145,9 @@ async function askAgent(text, imgs = []) {
     if (j.budget) lastMeta = { ...(lastMeta || {}), budget: j.budget };
     if (!r.ok) throw new Error(j.error || `Помилка ${r.status}`);
     const done = (j.actions || []).map(runAction).filter(Boolean);
+    const NOTE = { remember: "запам'ятав", forget: "забув", propose: "пропозиція" };
+    for (const n of j.notes || []) if (NOTE[n.type]) done.push(`${NOTE[n.type]}: «${String(n.text).slice(0, 80)}»`);
+    if (j.changed && (j.changed.memory || j.changed.proposals)) loadBrain(true);
     let reply = (j.reply || "").trim();
     if (!reply) reply = done.length ? "Готово: " + done.join("; ") + "." : "Готово.";
     history.push({ role: "assistant", content: reply + (done.length ? `\n[виконано: ${done.join("; ")}]` : ""), model: j.model });
@@ -311,7 +316,7 @@ loadWeather(); setInterval(loadWeather, 15 * 60 * 1000);
 
 /* ====== навігація (панелі розділів — див. кінець файлу) ====== */
 const SLUGS = { "Головна": "home", "Бізнес-центр": "business", "Проєкти": "projects", "Фінанси": "finance", "Розробка": "dev",
-  "Медіацентр": "media", "Комунікації": "comms", "Аналітика": "analytics", "Налаштування": "settings" };
+  "Медіацентр": "media", "Комунікації": "comms", "Аналітика": "analytics", "Властелін": "brain", "Налаштування": "settings" };
 function setActive(slug) {
   document.querySelectorAll(".menu button").forEach(x => x.classList.toggle("active", SLUGS[x.dataset.s] === slug));
 }
@@ -739,17 +744,86 @@ function winsView(s) {
 }
 function renderPanel() {
   if (!VIEWS[section]) return;
-  $("spBody").innerHTML = tabsBar(section) + (spTab === "tasks" ? tasksView(section) : spTab === "wins" ? winsView(section) : VIEWS[section].render());
+  const v = VIEWS[section];
+  if (v.tabs) { $("spBody").innerHTML = v.render(); return; }   // розділ із власними вкладками
+  $("spBody").innerHTML = tabsBar(section) + (spTab === "tasks" ? tasksView(section) : spTab === "wins" ? winsView(section) : v.render());
+}
+
+/* ====== «Властелін»: пропозиції (крок 4) і довготривала пам'ять (крок 2) — дані на сервері ====== */
+const brain = { memory: null, proposals: null, max: 200, err: "", at: 0, busy: false };
+const SECTION_NAMES = { business: "Бізнес-центр", projects: "Проєкти", finance: "Фінанси", dev: "Розробка", media: "Медіацентр", comms: "Комунікації", analytics: "Аналітика" };
+const MEM_CAT = { fact: "Факт", preference: "Вподобання", decision: "Рішення", goal: "Ціль" };
+async function brainApi(path, method = "GET", body) {
+  const r = await fetch(agent.url.replace(/\/+$/, "") + path, {
+    method, headers: { "Content-Type": "application/json", "X-Access-Code": agent.code || "" },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Помилка ${r.status}`);
+  return j;
+}
+async function loadBrain(force = false) {
+  // Викликається й із render(): тут не можна синхронно перемальовувати панель (була б рекурсія).
+  if (!agentReady()) { brain.err = "Підключіть AI-агента в «Налаштуваннях» — пам'ять і пропозиції зберігаються на сервері."; return; }
+  if (brain.busy || (!force && Date.now() - brain.at < 30e3)) return;
+  brain.busy = true; brain.at = Date.now();   // і після помилки — не частіше ніж раз на 30 с
+  try {
+    const [m, p] = await Promise.all([brainApi("/memory"), brainApi("/proposals")]);
+    brain.memory = m.memory || []; brain.max = m.max || 200; brain.proposals = p.proposals || []; brain.err = "";
+  } catch (e) { brain.err = e.message || "Немає зв'язку з сервером"; }
+  finally { brain.busy = false; refreshPanel("brain"); markProposals(); }
+}
+function markProposals() {   // лічильник нових пропозицій на кнопці меню
+  const code = document.querySelector('.menu button[data-s="Властелін"] code'); if (!code) return;
+  const n = (brain.proposals || []).filter(p => p.status === "new").length;
+  code.textContent = n ? `${n} нов.` : "09"; code.classList.toggle("hot", n > 0);
+}
+function proposalsView() {
+  if (!brain.proposals) return `<p class="empty">${brain.err ? esc(brain.err) : "Завантаження…"}</p>`;
+  const open = brain.proposals.filter(p => p.status === "new"), past = brain.proposals.filter(p => p.status !== "new").slice(0, 10);
+  const item = (p, act) => `<li class="pr-${esc(p.status)}"><div class="tm"><b>${esc(p.title)}</b><p>${esc(p.details)}</p>
+      <small>${esc(SECTION_NAMES[p.section] || p.section)} · вартість: ${esc(p.cost)} · ${new Date(p.created).toLocaleDateString("uk-UA")}</small></div>
+      ${act ? `<div class="pr-btns"><button class="btn-gold" data-act="pr-ok" data-i="${p.id}">Схвалити</button><button class="btn-ghost" data-act="pr-no" data-i="${p.id}">Відхилити</button></div>`
+        : `<span class="sp-st">${p.status === "approved" ? "Схвалено" : "Відхилено"}</span>`}</li>`;
+  return `<div class="sp-ask"><button class="btn-gold" data-act="brain-ask">◈ Аналіз і пропозиції</button>
+      <span>Властелін перегляне проєкти, задачі, пам'ять і GitHub та запропонує до 3 покращень (розумна модель, ≈$0.01–0.03).</span></div>
+    <section class="sp-box"><h3>Чекають рішення · ${open.length}</h3>
+      <ul class="sp-tasks sp-props">${open.map(p => item(p, true)).join("") || `<li class="empty">Нових пропозицій немає. Попросіть у чаті: «запропонуй, що покращити».</li>`}</ul></section>
+    ${past.length ? `<section class="sp-box"><h3>Історія рішень</h3><ul class="sp-tasks sp-props">${past.map(p => item(p, false)).join("")}</ul></section>` : ""}
+    ${note("Властелін лише пропонує. Схвалена пропозиція стає технічним завданням у своєму розділі (вкладка «Технічні завдання»). Пізніше (крок 5) схвалені завдання зможуть виконувати найняті агенти.")}`;
+}
+function memoryView() {
+  if (!brain.memory) return `<p class="empty">${brain.err ? esc(brain.err) : "Завантаження…"}</p>`;
+  return `<section class="sp-box"><h3>Додати запис вручну</h3>
+      <div class="sp-form sp-col"><textarea id="spMText" rows="2" maxlength="300" placeholder="Напр.: Звіти мені потрібні щопонеділка о 9:00" aria-label="Новий запис пам'яті"></textarea>
+      <div class="sp-form"><select id="spMCat" aria-label="Тип запису">${Object.entries(MEM_CAT).map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select>
+      <button class="btn-gold" data-act="m-add">+ Запам'ятати</button></div></div></section>
+    <section class="sp-box"><h3>Що пам'ятає Властелін · ${brain.memory.length} з ${brain.max}</h3>
+      <ul class="sp-tasks sp-mem">${brain.memory.map(m => `<li><div class="tm"><b>${esc(m.text)}</b><small>№${m.id} · ${esc(MEM_CAT[m.cat] || m.cat)} · ${new Date(m.updated).toLocaleDateString("uk-UA")}</small></div>
+        <button class="sp-st" data-act="m-edit" data-i="${m.id}" title="Змінити">Змінити</button>
+        <button class="sp-x" data-act="m-del" data-i="${m.id}" aria-label="Видалити запис №${m.id}">×</button></li>`).join("") || `<li class="empty">Пам'ять порожня. Скажіть у чаті: «запам'ятай, що…»</li>`}</ul></section>
+    ${note("Пам'ять спільна для всіх ваших пристроїв. Властелін бачить ці записи в кожній розмові. Секрети (ключі, паролі) сюди не записуються.")}`;
+}
+VIEWS.brain = { ico: "⬡", title: "ВЛАСТЕЛІН · ПРОПОЗИЦІЇ І ПАМ'ЯТЬ", tabs: true, render() {
+  loadBrain();
+  const tab = spTab === "mem" ? "mem" : "props";
+  const n = (brain.proposals || []).filter(p => p.status === "new").length;
+  return `<div class="sp-tabs" role="tablist">${[["props", "Пропозиції", n || ""], ["mem", "Пам'ять", brain.memory ? brain.memory.length : ""]]
+    .map(([k, t, c]) => `<button role="tab" aria-selected="${tab === k}" class="${tab === k ? "on" : ""}" data-act="tab" data-k="${k}">${t}${c !== "" ? ` <i>${c}</i>` : ""}</button>`).join("")}</div>`
+    + (tab === "mem" ? memoryView() : proposalsView());
+} };
+async function brainDo(fn, okMsg) {
+  try { await fn(); if (okMsg) toast(okMsg); } catch (e) { toast(e.message || "Помилка"); }
+  await loadBrain(true);
 }
 function refreshPanel(...which) { if (section !== "home" && which.includes(section)) renderPanel(); }
 function openPanel(slug) {
   const v = VIEWS[slug], first = section === "home";
   if (section !== slug) spTab = "main";
   section = slug; setActive(slug);
-  const name = Object.keys(SLUGS).find(k => SLUGS[k] === slug);
-  const code = document.querySelector(`.menu button[data-s="${name}"] code`);
+  const num = String(Object.values(SLUGS).indexOf(slug) + 1).padStart(2, "0");
   $("spTitle").innerHTML = `<b class="ico">${esc(v.ico)}</b> ${v.title}`;
-  $("spCode").textContent = `SYS.${code ? code.textContent : "00"} // ${slug.toUpperCase()}`;
+  $("spCode").textContent = `SYS.${num} // ${slug.toUpperCase()}`;
   $("spanel").hidden = false; document.body.classList.add("sp-open");
   placePanel(); renderPanel(); $("spBody").scrollTop = 0;
   if (first) { $("spClose").focus({ preventScroll: true }); officeApi && officeApi.setPaused(true); bustApi && bustApi.setPaused(true); }
@@ -804,6 +878,42 @@ const PANEL_ACTS = {
   "w-del"(i) {
     const list = wsOf(section).wins, x = list[i]; if (!x || !confirm(`Видалити вікно «${x.title}»?`)) return;
     list.splice(i, 1); saveWs(); renderPanel(); toast("Вікно видалено");
+  },
+  // «Властелін»: аналіз, рішення щодо пропозицій і керування пам'яттю
+  "brain-ask"() {
+    if (!agentReady()) { toast("Спершу підключіть AI-агента в «Налаштуваннях»"); return; }
+    if (pending) return;
+    openChat("Проаналізуй стан офісу: проєкти, технічні завдання, пам'ять і GitHub. Коротко дай висновки і запропонуй до 3 конкретних покращень через пропозиції.");
+    sendChat();
+  },
+  "pr-ok"(id) {
+    brainDo(async () => {
+      const { proposal: p } = await brainApi("/proposals", "POST", { id, decision: "approved" });
+      const s = SECTION_NAMES[p.section] ? p.section : "business";
+      wsOf(s).tasks.unshift({ title: p.title.slice(0, 100), desc: `${p.details}\n\nОцінка вартості: ${p.cost}. Пропозиція Властеліна №${p.id}.`.slice(0, 2000), status: "new", at: Date.now() });
+      saveWs();
+      toast(`Схвалено → технічне завдання в розділі «${SECTION_NAMES[s]}»`);
+    });
+  },
+  "pr-no"(id) {
+    const p = (brain.proposals || []).find(x => x.id === id);
+    if (p && !confirm(`Відхилити пропозицію «${p.title}»?`)) return;
+    brainDo(() => brainApi("/proposals", "POST", { id, decision: "rejected" }), "Пропозицію відхилено");
+  },
+  "m-add"() {
+    const text = $("spMText").value.trim(); if (!text) { $("spMText").focus(); return; }
+    brainDo(() => brainApi("/memory", "POST", { text, category: $("spMCat").value }), "Запам'ятав");
+  },
+  "m-edit"(id) {
+    const m = (brain.memory || []).find(x => x.id === id); if (!m) return;
+    const text = prompt("Змінити запис пам'яті:", m.text);
+    if (text === null || !text.trim() || text.trim() === m.text) return;
+    brainDo(() => brainApi("/memory", "PUT", { id, text: text.trim() }), "Запис змінено");
+  },
+  "m-del"(id) {
+    const m = (brain.memory || []).find(x => x.id === id);
+    if (!m || !confirm(`Видалити з пам'яті: «${m.text}»?`)) return;
+    brainDo(() => brainApi("/memory?id=" + id, "DELETE"), "Запис видалено");
   }
 };
 $("spBody").addEventListener("click", e => {
@@ -891,6 +1001,7 @@ sync = {
   }
 };
 sync.run(true);
-setInterval(() => { if (document.visibilityState === "visible") sync.run(true); }, 60000);
+loadBrain();   // лічильник нових пропозицій на кнопці «Властелін»
+setInterval(() => { if (document.visibilityState === "visible") { sync.run(true); loadBrain(); } }, 60000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync.run(true); });
 addEventListener("online", () => sync.run(true));

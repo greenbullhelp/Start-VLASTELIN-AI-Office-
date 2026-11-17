@@ -1,0 +1,7 @@
+# Cloudflare Worker for the VLASTELIN AI agent.
+# Deploy:  npx wrangler deploy
+# Secrets: npx wrangler secret put ANTHROPIC_API_KEY
+#          npx wrangler secret put ACCESS_CODE
+name = "vlastelin-agent"
+main = "worker/agent-worker.js"
+compatibility_date = "2026-11-01"

@@ -20,3 +20,6 @@ globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: '
 r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), env); j = await r.json();
 ok(r.status === 502 && j.error.includes('invalid'), 'upstream error passed');
 r = await worker.fetch(mk({}, { messages: [{ role: 'user', content: 'hi' }] }), { ACCESS_CODE: 'secret' }); ok(r.status === 401, 'code required before key check');
+let hdr; globalThis.fetch = async (url, opts) => { hdr = opts.headers['x-api-key']; return new Response(JSON.stringify({ content: [{ type: 'text', text: 'ok' }] }), { status: 200 }); };
+r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), { ...env, ANTHROPIC_API_KEY: ' sk-ant-x\r\n' }); ok(r.status === 200 && hdr === 'sk-ant-x', 'key whitespace trimmed');
+r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'hi' }] }), { ...env, ANTHROPIC_API_KEY: 'sk-ant x' }); j = await r.json(); ok(r.status === 500 && j.error.includes('недопустимі'), 'bad key chars reported');

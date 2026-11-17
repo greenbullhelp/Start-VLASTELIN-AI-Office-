@@ -108,6 +108,9 @@ export default {
     if (!okOrigin) return json({ error: 'Доступ дозволено лише з сайту офісу' }, 403, cors);
     if (env.ACCESS_CODE && request.headers.get('X-Access-Code') !== env.ACCESS_CODE) return json({ error: 'Невірний код доступу' }, 401, cors);
     if (!env.ANTHROPIC_API_KEY) return json({ error: 'На сервері не задано ANTHROPIC_API_KEY' }, 500, cors);
+    // Copy-paste often adds spaces/newlines; such a header value makes fetch throw before any request is sent.
+    const apiKey = String(env.ANTHROPIC_API_KEY).trim();
+    if (/[^\x21-\x7e]/.test(apiKey)) return json({ error: 'Ключ ANTHROPIC_API_KEY містить пробіли або недопустимі символи — вставте його в Cloudflare заново' }, 500, cors);
 
     let body;
     try { body = await request.json(); } catch { return json({ error: 'Некоректний JSON' }, 400, cors); }
@@ -118,10 +121,11 @@ export default {
     try {
       res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({ model: env.MODEL || DEFAULT_MODEL, max_tokens: 1024, system: systemPrompt(body.context), tools: TOOLS, messages })
       });
     } catch (e) {
+      console.error('Claude API fetch failed:', e && e.message);
       return json({ error: 'Не вдалося зв\'язатися з Claude API' }, 502, cors);
     }
     const data = await res.json().catch(() => ({}));

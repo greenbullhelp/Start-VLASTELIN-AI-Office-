@@ -5,3 +5,7 @@
 name = "vlastelin-agent"
 main = "worker/agent-worker.js"
 compatibility_date = "2026-11-01"
+
+[vars]
+# Sites allowed to call the agent (comma-separated). github.io stays until the old site is switched off.
+ALLOWED_ORIGINS = "https://vlastelin-office.greenbull-help.workers.dev,https://greenbullhelp.github.io"

@@ -419,3 +419,45 @@ body.eco .spanel,body.eco .sp-dim{animation:none}
   .sp-bars li span{grid-column:1/-1;white-space:normal}
 }
 @media (prefers-reduced-motion:reduce){.spin,.wave i,.bars i{animation:none}}
+
+/* ===== Чат з Властеліном: подовжене вікно ===== */
+.chatwin{position:fixed;z-index:42;right:14px;top:14px;bottom:14px;width:min(460px,calc(100vw - 28px));--c:20px;
+  display:flex;flex-direction:column;padding:14px 16px 12px;animation:spIn .25s ease-out}
+.chatwin[hidden]{display:none}
+.chat-head{flex:none}
+.chat-head .icon-btn{width:36px;height:36px;font-size:22px}
+.chat-meta{flex:none;min-height:14px;font-family:var(--mono);font-size:11px;color:var(--muted);margin:-2px 0 4px}
+.chat-log{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:10px;padding:6px 2px 10px}
+.msg{--c:9px;clip-path:polygon(var(--c) 0,100% 0,100% calc(100% - var(--c)),calc(100% - var(--c)) 100%,0 100%,0 var(--c));
+  max-width:86%;padding:10px 12px;font-size:15px;line-height:1.45;overflow-wrap:anywhere}
+.msg.ai{align-self:flex-start;background:linear-gradient(180deg,rgba(20,46,84,.92),rgba(10,24,46,.92));box-shadow:inset 0 0 0 1px rgba(63,184,255,.35)}
+.msg.me{align-self:flex-end;background:linear-gradient(180deg,rgba(232,183,90,.24),rgba(80,50,10,.4));box-shadow:inset 0 0 0 1px rgba(232,183,90,.45)}
+.msg.sys{align-self:stretch;max-width:none;font-size:13.5px;color:var(--muted);background:rgba(63,184,255,.07);box-shadow:inset 0 0 0 1px rgba(63,184,255,.18)}
+.msg.sys b{color:var(--cyan-2)}
+.msg small{display:block;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.msg .done{display:block;margin-top:6px;color:var(--green);font-size:13px}
+.msg .thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.msg .thumbs img{width:84px;height:84px;object-fit:cover;border:1px solid rgba(232,183,90,.5);display:block}
+.linkish{background:none;border:none;padding:0;color:var(--cyan-2);text-decoration:underline;font-size:inherit}
+.chat-att{flex:none;display:flex;gap:10px;flex-wrap:wrap;padding:10px 4px 4px}
+.chat-att[hidden]{display:none}
+.chat-att div{position:relative}
+.chat-att img{width:64px;height:64px;object-fit:cover;border:1px solid rgba(63,184,255,.5);display:block}
+.chat-att button{position:absolute;right:-8px;top:-8px;width:26px;height:26px;border-radius:50%;background:#0a1830;border:1px solid var(--red);font-size:15px;line-height:1;padding:0}
+.chat-input{flex:none;display:flex;gap:8px;align-items:flex-end;padding-top:10px;border-top:1px solid rgba(63,184,255,.2)}
+.chat-input textarea{flex:1;min-width:0;min-height:44px;max-height:140px;resize:none;background:rgba(3,8,18,.9);border:1px solid rgba(63,184,255,.4);
+  color:var(--text);padding:11px 12px;font-family:inherit;font-size:16px;line-height:1.35;outline:none}
+.chat-input textarea:focus{border-color:var(--cyan)}
+.chat-btn{flex:none;width:44px;height:44px;display:grid;place-items:center;border:1px solid rgba(63,184,255,.45);background:rgba(63,184,255,.12);font-size:18px;padding:0;
+  clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)}
+.chat-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linejoin:round}
+.chat-btn.send{border-color:var(--gold);background:linear-gradient(180deg,rgba(232,183,90,.35),rgba(80,50,10,.5))}
+.chat-btn:disabled{opacity:.45;cursor:default}
+.chat-foot{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.chat-deep{display:flex;align-items:center;gap:6px;cursor:pointer;min-height:32px}
+.chat-deep input{width:18px;height:18px;accent-color:var(--gold)}
+.chat-deep small{font-size:11px}
+.chat-clear{background:none;border:none;color:var(--muted);font-size:13px;text-decoration:underline;padding:6px 0}
+@media (max-width:900px){
+  .chatwin{left:8px;right:8px;width:auto;top:calc(8px + env(safe-area-inset-top));bottom:calc(8px + env(safe-area-inset-bottom));padding:12px 12px 10px;--c:16px}
+}

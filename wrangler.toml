@@ -5,3 +5,12 @@
 name = "vlastelin-agent"
 main = "worker/agent-worker.js"
 compatibility_date = "2026-11-01"
+
+[vars]
+# Daily spending cap in USD; the worker answers 429 once today's spend reaches it.
+DAILY_BUDGET_USD = "0.50"
+
+# Per-day spend counter for the budget above.
+[[kv_namespaces]]
+binding = "BUDGET"
+id = "3c65bce512414120bf7bde39b2f2bdc4"

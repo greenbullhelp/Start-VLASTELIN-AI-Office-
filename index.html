@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Cpolygon points=%2250,6 90,28 90,72 50,94 10,72 10,28%22 fill=%22%2306142a%22 stroke=%22%23e8b75a%22 stroke-width=%226%22/%3E%3Ccircle cx=%2250%22 cy=%2250%22 r=%2214%22 fill=%22%238fe0ff%22/%3E%3C/svg%3E">
-<link rel="stylesheet" href="css/style.css?v=20261117b">
+<link rel="stylesheet" href="css/style.css?v=20261117c">
 <script type="importmap">
 { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
 </script>
@@ -179,6 +179,24 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- ===== ЧАТ З ВЛАСТЕЛІНОМ ===== -->
+<section class="hud chatwin" id="chatwin" role="dialog" aria-label="Чат з Властеліном" hidden>
+  <div class="hud-head chat-head"><span><b class="ico">≋</b> ВЛАСТЕЛІН · ЧАТ</span><button class="icon-btn" id="chatClose" aria-label="Закрити чат">×</button></div>
+  <div class="chat-meta" id="chatMeta"></div>
+  <div class="chat-log" id="chatLog" aria-live="polite"></div>
+  <div class="chat-att" id="chatAtt" hidden></div>
+  <div class="chat-input">
+    <button class="chat-btn" id="chatPhoto" aria-label="Додати фото" title="Додати фото"><svg viewBox="0 0 24 24"><path d="M4 8h3.5l2-3h5l2 3H20v11H4z"/><circle cx="12" cy="13.5" r="3.5"/></svg></button>
+    <input type="file" id="chatFile" accept="image/*" multiple hidden>
+    <textarea id="chatText" rows="1" maxlength="2000" placeholder="Напишіть Властеліну…" aria-label="Повідомлення"></textarea>
+    <button class="chat-btn send" id="chatSend" aria-label="Надіслати">➤</button>
+  </div>
+  <div class="chat-foot">
+    <label class="chat-deep"><input type="checkbox" id="chatDeep"> Глибокий аналіз <small>(Sonnet, дорожче)</small></label>
+    <button class="chat-clear" id="chatClear">Очистити розмову</button>
+  </div>
+</section>
+
 <!-- ===== НАЛАШТУВАННЯ АГЕНТА ===== -->
 <div class="modal hud" id="settings" role="dialog" aria-modal="true" aria-labelledby="setTitle" hidden>
   <div class="hud-head"><span id="setTitle"><b class="ico">⚙</b> НАЛАШТУВАННЯ AI-АГЕНТА</span><button class="icon-btn" id="setClose" aria-label="Закрити">×</button></div>
@@ -196,6 +214,6 @@
   </div>
   <p class="set-note" id="setNote">Код доступу зберігається лише в цьому браузері. Ключ Claude API на сайт не потрапляє — він лежить на сервері агента.</p>
 </div>
-<script type="module" src="js/app.js?v=20261117b"></script>
+<script type="module" src="js/app.js?v=20261117c"></script>
 </body>
 </html>

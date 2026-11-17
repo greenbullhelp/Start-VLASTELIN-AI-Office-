@@ -29,7 +29,11 @@ function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add
 
 let bustApi = null, officeApi = null;
 let section = "home";   // відкритий розділ навігації (home — панель закрита)
-function say(html, sec = 3) { $("bubble").innerHTML = html; bustApi && bustApi.speak(sec); }
+let mirrorSay = false, chatNotes = [];   // локальні відповіді (без агента) дублюються у вікно чату
+function say(html, sec = 3) {
+  $("bubble").innerHTML = html; bustApi && bustApi.speak(sec);
+  if (mirrorSay) { chatNotes.push(html); renderChat(); }
+}
 
 /* ====== AI-агент ====== */
 const agent = Object.assign({ url: CONFIG.agentUrl, code: "", voice: true }, store.get("vl_agent", {}));
@@ -68,9 +72,16 @@ function runAction(a) {
   return null;
 }
 
-async function askAgent(text) {
-  history.push({ role: "user", content: text });
+let pending = false, lastMeta = null;
+// Base64 photos are never written to localStorage: history keeps only the photo count.
+const saveHistory = () => store.set("vl_history", history.slice(-20).map(({ _thumbs, ...m }) => m));
+
+async function askAgent(text, imgs = []) {
+  const entry = { role: "user", content: text || "Подивись на фото." };
+  if (imgs.length) { entry.photos = imgs.length; entry._thumbs = imgs.map(i => i.url); }
+  history.push(entry);
   history = history.slice(-20);
+  pending = true; renderChat();
   say(`<span class="thinking"><i></i><i></i><i></i></span> <span class="muted">Думаю…</span>`, 0);
   bustApi && bustApi.think(true);
   try {
@@ -78,26 +89,128 @@ async function askAgent(text) {
     const r = await fetch(agent.url.replace(/\/+$/, "") + "/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Access-Code": agent.code || "" },
-      body: JSON.stringify({ messages: history, context: ctx })
+      body: JSON.stringify({
+        messages: history.map(({ role, content }) => ({ role, content })), context: ctx,
+        images: imgs.map(({ media_type, data }) => ({ media_type, data })),
+        mode: $("chatDeep").checked ? "deep" : "auto"
+      })
     });
     const j = await r.json().catch(() => ({}));
+    if (j.budget) lastMeta = { ...(lastMeta || {}), budget: j.budget };
     if (!r.ok) throw new Error(j.error || `Помилка ${r.status}`);
     const done = (j.actions || []).map(runAction).filter(Boolean);
     let reply = (j.reply || "").trim();
     if (!reply) reply = done.length ? "Готово: " + done.join("; ") + "." : "Готово.";
-    history.push({ role: "assistant", content: reply + (done.length ? `\n[виконано: ${done.join("; ")}]` : "") });
-    store.set("vl_history", history.slice(-20));
+    history.push({ role: "assistant", content: reply + (done.length ? `\n[виконано: ${done.join("; ")}]` : ""), model: j.model });
+    lastMeta = { model: j.model, cost: j.cost, budget: j.budget };
+    saveHistory();
     say(esc(reply).replace(/\n/g, "<br>") + (done.length ? `<br><span class="muted">✓ ${esc(done.join("; "))}</span>` : ""), Math.min(8, reply.length / 15));
     speakOut(reply);
     setAiState(true);
   } catch (e) {
     history.pop();
-    say(`<b>Агент недоступний.</b><br><span class="muted">${esc(e.message || "Немає зв'язку")}. Перевірте «Налаштування».</span>`);
-    setAiState(false);
+    const msg = `<b>Агент недоступний.</b><br><span class="muted">${esc(e.message || "Немає зв'язку")}. Перевірте «Налаштування».</span>`;
+    say(msg); chatNotes.push(msg);
+    if (!/ліміт/i.test(e.message || "")) setAiState(false);
   } finally {
+    pending = false; renderChat();
     bustApi && bustApi.think(false);
   }
 }
+
+/* ====== вікно чату з Властеліном ====== */
+let attach = [];   // {media_type, data, url} — фото, підготовлені до надсилання
+const modelName = m => /haiku/i.test(m || "") ? "Haiku" : /sonnet/i.test(m || "") ? "Sonnet" : /opus/i.test(m || "") ? "Opus" : (m || "");
+function fmtMsg(text) {
+  const m = String(text).match(/^([\s\S]*?)\n\[виконано: ([\s\S]*)\]$/);
+  const body = esc(m ? m[1] : text).replace(/\n/g, "<br>");
+  return m ? `${body}<span class="done">✓ ${esc(m[2])}</span>` : body;
+}
+function renderChat() {
+  const log = $("chatLog"); if (!log || $("chatwin").hidden) return;
+  const msgs = history.map(m => {
+    const thumbs = m._thumbs ? `<div class="thumbs">${m._thumbs.map(u => `<img src="${esc(u)}" alt="Фото">`).join("")}</div>`
+      : m.photos ? `<small>📷 фото: ${m.photos | 0}</small>` : "";
+    return `<div class="msg ${m.role === "user" ? "me" : "ai"}">${thumbs}${fmtMsg(m.content)}${m.role === "assistant" && m.model ? `<small>${esc(modelName(m.model))}</small>` : ""}</div>`;
+  }).join("");
+  const hello = history.length || chatNotes.length ? "" : `<div class="msg sys">Вітаю, ${esc(CONFIG.userName)}! Я Властелін. Напишіть завдання або додайте фото 📷.<br>Прості запити обробляє економна модель, аналіз — потужніша.</div>`;
+  const setup = agentReady() ? "" : `<div class="msg sys">AI-агент ще не підключений. <button class="linkish" id="chatSetup">Відкрити налаштування</button></div>`;
+  log.innerHTML = hello + setup + msgs + chatNotes.map(h => `<div class="msg sys">${h}</div>`).join("")
+    + (pending ? `<div class="msg ai"><span class="thinking"><i></i><i></i><i></i></span> <span class="muted">Думаю…</span></div>` : "");
+  log.scrollTop = log.scrollHeight;
+  const b = lastMeta && lastMeta.budget;
+  $("chatMeta").textContent = [lastMeta && lastMeta.model ? `Остання відповідь: ${modelName(lastMeta.model)}` : "",
+    lastMeta && typeof lastMeta.cost === "number" ? `$${lastMeta.cost.toFixed(4)}` : "",
+    b ? `сьогодні $${b.spent.toFixed(3)} з $${b.limit.toFixed(2)}` : ""].filter(Boolean).join(" · ");
+  $("chatSend").disabled = pending;
+}
+function renderAtt() {
+  $("chatAtt").hidden = !attach.length;
+  $("chatAtt").innerHTML = attach.map((a, i) => `<div><img src="${esc(a.url)}" alt="Фото ${i + 1}"><button data-i="${i}" aria-label="Прибрати фото">×</button></div>`).join("");
+}
+async function shrinkPhoto(file, max = 1280) {   // зменшуємо фото: менше токенів і швидше надсилання
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = bad; i.src = url; });
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    const dataUrl = c.toDataURL("image/jpeg", .82);
+    return { media_type: "image/jpeg", data: dataUrl.split(",")[1], url: dataUrl };
+  } finally { URL.revokeObjectURL(url); }
+}
+async function addPhotos(files) {
+  for (const f of [...files]) {
+    if (attach.length >= 4) { toast("Можна додати до 4 фото"); break; }
+    if (!/^image\//.test(f.type) && !/\.(heic|heif)$/i.test(f.name || "")) continue;
+    try { attach.push(await shrinkPhoto(f)); } catch (e) { toast("Не вдалося прочитати фото"); }
+  }
+  renderAtt();
+}
+function growText() { const t = $("chatText"); t.style.height = "auto"; t.style.height = Math.min(140, t.scrollHeight + 2) + "px"; }
+function openChat(prefill = "") {
+  const was = !$("chatwin").hidden;
+  $("chatwin").hidden = false; document.body.classList.add("chat-open");
+  if (prefill) $("chatText").value = prefill;
+  renderChat(); growText();
+  if (!was && innerWidth <= 900) { officeApi && officeApi.setPaused(true); bustApi && bustApi.setPaused(true); }
+  $("chatText").focus({ preventScroll: true });
+}
+function closeChat() {
+  if ($("chatwin").hidden) return;
+  $("chatwin").hidden = true; document.body.classList.remove("chat-open");
+  if (section === "home") { officeApi && officeApi.setPaused(false); bustApi && bustApi.setPaused(false); }
+}
+function sendChat() {
+  if (pending) return;
+  const text = $("chatText").value.trim(), imgs = attach;
+  if (!text && !imgs.length) { $("chatText").focus(); return; }
+  $("chatText").value = ""; growText(); attach = []; renderAtt();
+  if (agentReady()) { askAgent(text, imgs); return; }
+  if (imgs.length) chatNotes.push("<b>Фото не надіслано:</b> аналіз фото працює лише з підключеним AI-агентом.");
+  if (text) { chatNotes.push(`<span class="muted">Ви:</span> ${esc(text)}`); mirrorSay = true; try { handleCommand(text); } finally { mirrorSay = false; } }
+  renderChat();
+}
+$("chatSend").onclick = sendChat;
+$("chatClose").onclick = closeChat;
+$("chatPhoto").onclick = () => $("chatFile").click();
+$("chatFile").onchange = e => { addPhotos(e.target.files); e.target.value = ""; };
+$("chatAtt").onclick = e => { const b = e.target.closest("button[data-i]"); if (b) { attach.splice(+b.dataset.i, 1); renderAtt(); } };
+$("chatText").addEventListener("input", growText);
+$("chatText").addEventListener("keydown", e => {   // Enter — надіслати (на ПК), Shift+Enter — новий рядок
+  if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer:coarse)").matches) { e.preventDefault(); sendChat(); }
+});
+$("chatText").addEventListener("paste", e => {
+  const files = [...(e.clipboardData?.files || [])].filter(f => /^image\//.test(f.type));
+  if (files.length) { e.preventDefault(); addPhotos(files); }
+});
+$("chatLog").addEventListener("click", e => { if (e.target.id === "chatSetup") { closeChat(); setActive("settings"); openSettings(); } });
+$("chatClear").onclick = () => {
+  if (!history.length && !chatNotes.length) return;
+  if (!confirm("Очистити всю розмову з Властеліном?")) return;
+  history = []; chatNotes = []; saveHistory(); renderChat(); toast("Розмову очищено");
+};
 
 /* ====== 3D ====== */
 async function boot3D() {
@@ -239,9 +352,16 @@ function handleCommand(text) {
   if (/звіт/.test(t)) { makeReport(); return; }
   say(`<b>Команду прийнято:</b> «${esc(text)}»<br><span class="muted">AI-агент ще не підключений (Налаштування). Поки я розумію: «створи проєкт …», «котра година», «погода», «звіт».</span>`);
 }
-function sendCmd() { const v = $("cmdInput").value.trim(); if (!v) return; $("cmdInput").value = ""; handleCommand(v); }
+// Початок розмови з Властеліном відкриває подовжене вікно чату (там є історія і фото).
+function sendCmd() {
+  const v = $("cmdInput").value.trim(); $("cmdInput").value = "";
+  openChat(v); if (v) sendChat();
+}
 $("cmdSend").onclick = sendCmd;
 $("cmdInput").onkeydown = e => { if (e.key === "Enter") sendCmd(); };
+$("cmdInput").addEventListener("focus", () => { const v = $("cmdInput").value; $("cmdInput").value = ""; $("cmdInput").blur(); openChat(v); });
+$("bubble").addEventListener("click", () => openChat());
+$("bubble").style.cursor = "pointer"; $("bubble").title = "Відкрити чат з Властеліном";
 
 /* ====== голос ====== */
 ["wave", "wave2"].forEach(id => {
@@ -339,6 +459,7 @@ $("backdrop").onclick = () => { toggleBig(false); closeSettings(); };
 addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (!$("settings").hidden) closeSettings();
+  else if (!$("chatwin").hidden) closeChat();
   else if ($("assistant").classList.contains("big")) toggleBig(false);
   else if (section !== "home") go("home");
 });
@@ -356,7 +477,7 @@ $("setTest").onclick = async () => {
   readSettings(); $("setNote").className = "set-note"; $("setNote").textContent = "Перевіряю…";
   const r = await pingAgent(); $("setNote").className = "set-note " + (r.ok ? "ok" : "bad"); $("setNote").textContent = r.msg;
 };
-$("setClear").onclick = () => { history = []; store.set("vl_history", []); toast("Розмову очищено"); };
+$("setClear").onclick = () => { history = []; chatNotes = []; saveHistory(); renderChat(); toast("Розмову очищено"); };
 $("setSave").onclick = async () => {
   readSettings();
   if (agent.url && !agentReady()) { $("setNote").className = "set-note bad"; $("setNote").textContent = "Адреса має починатися з https://"; return; }

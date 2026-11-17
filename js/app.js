@@ -56,8 +56,11 @@ function pickVoice() {
 }
 const isMaleVoice = v => !!v && MALE_RE.test(v.name);
 let voiceWarned = false;
+// Повертає Promise, що виконується, коли Властелін договорив (потрібно для «Режиму розмови»).
 function speakOut(text) {
-  if (!agent.voice || !("speechSynthesis" in window) || !text) return;
+  return new Promise(done => {
+  if (!agent.voice || !("speechSynthesis" in window) || !text) return done();
+  setTimeout(done, 90000);   // запобіжник, якщо браузер не повідомить про кінець
   try {
     speechSynthesis.cancel();
     const clean = String(text).replace(/\[виконано:[^\]]*\]/g, "").replace(/[•*#_`]/g, " ").replace(/https?:\/\/\S+/g, "посилання");
@@ -69,8 +72,10 @@ function speakOut(text) {
       voiceWarned = true;
       toast(v ? "На цьому пристрої немає чоловічого українського голосу" : "На цьому пристрої немає українського голосу");
     }
+    u.onend = u.onerror = () => done();
     speechSynthesis.speak(u);
-  } catch (e) {}
+  } catch (e) { done(); }
+  });
 }
 function fillVoiceSelect() {
   const sel = $("setVoiceName"); if (!sel) return;
@@ -134,8 +139,9 @@ async function askAgent(text, imgs = []) {
     lastMeta = { model: j.model, cost: j.cost, budget: j.budget };
     saveHistory();
     say(esc(reply).replace(/\n/g, "<br>") + (done.length ? `<br><span class="muted">✓ ${esc(done.join("; "))}</span>` : ""), Math.min(8, reply.length / 15));
-    speakOut(reply);
+    const spoken = speakOut(reply);
     setAiState(true);
+    if (talkMode()) spoken.then(() => setTimeout(() => { if (!$("chatwin").hidden && talkMode() && !rec && !pending) startVoice(true); }, 350));
   } catch (e) {
     history.pop();
     const msg = `<b>Агент недоступний.</b><br><span class="muted">${esc(e.message || "Немає зв'язку")}. Перевірте «Налаштування».</span>`;
@@ -208,6 +214,7 @@ function openChat(prefill = "") {
 }
 function closeChat() {
   if ($("chatwin").hidden) return;
+  stopVoice(false); try { speechSynthesis.cancel(); } catch (e) {}
   $("chatwin").hidden = true; document.body.classList.remove("chat-open");
   if (section === "home") { officeApi && officeApi.setPaused(false); bustApi && bustApi.setPaused(false); }
 }
@@ -397,24 +404,71 @@ $("bubble").style.cursor = "pointer"; $("bubble").title = "Відкрити ча
   const w = $(id);
   for (let i = 0; i < 22; i++) { const b = document.createElement("i"); b.style.animationDelay = (Math.random() * 1.2).toFixed(2) + "s"; w.appendChild(b); }
 });
-let rec = null;
+/* Одне натискання 🎤 — слухаю. Пауза ~1.5 с після мови = «договорив» → надсилаю сам.
+   Повторне натискання — надіслати одразу. «Режим розмови» — після відповіді слухаю знову. */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SILENCE_MS = 1500, WAIT_MS = 8000, MAX_MS = 45000;
+const VOICE_ERR = {
+  "not-allowed": "Немає доступу до мікрофона. Дозвольте мікрофон для цього сайту в налаштуваннях браузера.",
+  "service-not-allowed": "Браузер не дозволив розпізнавання мови. На iPhone перевірте: Параметри → Siri → Диктування увімкнено.",
+  "language-not-supported": "Цей браузер не розпізнає українську мову.",
+  "audio-capture": "Мікрофон не знайдено.",
+  "network": "Немає зв'язку зі службою розпізнавання мови."
+};
+let rec = null, heard = "", silenceT = 0, maxT = 0;
+const talkMode = () => $("chatTalk").checked;
 function setListening(v) {
-  $("micBtn").classList.toggle("live", v); $("wave").classList.toggle("live", v); $("wave2").classList.toggle("live", v);
+  ["micBtn", "chatMic"].forEach(id => $(id).classList.toggle("live", v));
+  $("wave").classList.toggle("live", v); $("wave2").classList.toggle("live", v);
+  $("chatwin").classList.toggle("listening", v);
+  $("chatText").placeholder = v ? "Слухаю… говоріть, пауза — і я відповім" : "Напишіть Властеліну…";
   bustApi && bustApi.listen(v);
 }
-function startVoice() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { say("<b>Голос недоступний</b><br>Цей браузер не підтримує розпізнавання мови. Спробуйте Chrome або введіть текст."); return; }
-  if (rec) { rec.stop(); return; }
-  rec = new SR(); rec.lang = "uk-UA"; rec.interimResults = false;
-  setListening(true); say("<b>Слухаю…</b>");
-  rec.onresult = e => { $("cmdInput").value = e.results[0][0].transcript; sendCmd(); };
-  rec.onerror = () => say("<b>Не розчув.</b><br>Спробуйте ще раз.");
-  rec.onend = () => { rec = null; setListening(false); };
-  rec.start();
+function stopVoice(send = true) { if (!rec) return; rec._send = send; clearTimeout(silenceT); clearTimeout(maxT); try { rec.stop(); } catch (e) {} }
+function startVoice(auto = false) {
+  if (auto !== true) auto = false;   // викликається і як обробник кліку (з подією)
+  if (!SR) {
+    openChat();
+    chatNotes.push("<b>Голосовий ввід недоступний у цьому браузері.</b> На iPhone відкрийте сайт у Safari, на комп'ютері — у Chrome або Edge. Або скористайтеся кнопкою диктування 🎤 на клавіатурі телефона.");
+    renderChat(); return;
+  }
+  if (rec) { stopVoice(true); return; }   // повторне натискання — «я договорив»
+  try { speechSynthesis.cancel(); } catch (e) {}
+  if (pending) return;
+  openChat();
+  heard = "";
+  const base = $("chatText").value.trim();
+  const r = rec = new SR();
+  r.lang = "uk-UA"; r.interimResults = true; r.continuous = true; r._send = true;
+  const finish = () => stopVoice(true);
+  r.onresult = e => {
+    let text = "";
+    for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript + " ";
+    heard = text.replace(/\s+/g, " ").trim();
+    $("chatText").value = (base ? base + " " : "") + heard; growText();
+    clearTimeout(silenceT); silenceT = setTimeout(finish, SILENCE_MS);
+  };
+  r.onerror = e => { r._err = e.error; };
+  r.onend = () => {
+    clearTimeout(silenceT); clearTimeout(maxT);
+    if (rec === r) rec = null;
+    setListening(false);
+    if (r._send && heard) { sendChat(); return; }
+    const msg = VOICE_ERR[r._err];
+    if (msg) chatNotes.push(`<b>Голос:</b> ${msg}`);
+    else if (!heard && !auto && r._err !== "aborted") chatNotes.push("<b>Не почув.</b> Натисніть 🎤 і говоріть — коли зробите паузу, я відповім.");
+    renderChat();
+  };
+  try { r.start(); } catch (e) { rec = null; return; }
+  setListening(true); say("<b>Слухаю…</b>", 0);
+  silenceT = setTimeout(finish, WAIT_MS);   // якщо взагалі мовчите — зупиняюсь
+  maxT = setTimeout(finish, MAX_MS);
 }
 $("micBtn").onclick = startVoice;
 $("dVoice").onclick = startVoice;
+$("chatMic").onclick = startVoice;
+$("chatTalk").checked = !!store.get("vl_talk", false);
+$("chatTalk").onchange = () => { store.set("vl_talk", $("chatTalk").checked); if (!$("chatTalk").checked) stopVoice(false); };
 
 /* ====== док ====== */
 $("dClients").onclick = () => say(`<b>Пошук клієнтів</b><br>Модуль з'явиться після підключення AI-моделі та джерел даних.`);

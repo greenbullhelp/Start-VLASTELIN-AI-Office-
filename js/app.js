@@ -41,17 +41,46 @@ let history = store.get("vl_history", []);
 let aiOnline = false;
 const agentReady = () => /^https:\/\//.test(agent.url || "");
 
+/* ====== голос: чоловічий український, якщо пристрій його має ======
+   Браузери не повідомляють стать голосу, тому розпізнаємо за назвою. Відомі чоловічі uk-голоси: Microsoft Ostap (Edge/Windows). */
+const MALE_RE = /ostap|остап|\bmale\b|чолов|\bman\b|uk-ua-x-.*m\b/i;
+const FEMALE_RE = /lesya|леся|polina|поліна|female|жіноч|woman/i;
+const ukVoices = () => ("speechSynthesis" in window ? speechSynthesis.getVoices() : []).filter(v => /^uk/i.test(v.lang));
+function pickVoice() {
+  const list = ukVoices();
+  if (agent.voiceName) { const v = list.find(v => v.name === agent.voiceName); if (v) return v; }
+  return list.find(v => MALE_RE.test(v.name) && /natural|online|neural/i.test(v.name))
+    || list.find(v => MALE_RE.test(v.name))
+    || list.find(v => !FEMALE_RE.test(v.name))
+    || list[0] || null;
+}
+const isMaleVoice = v => !!v && MALE_RE.test(v.name);
+let voiceWarned = false;
 function speakOut(text) {
   if (!agent.voice || !("speechSynthesis" in window) || !text) return;
   try {
     speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "uk-UA"; u.rate = 1.02; u.pitch = .9;
-    const v = speechSynthesis.getVoices().find(v => /^uk/i.test(v.lang));
+    const clean = String(text).replace(/\[виконано:[^\]]*\]/g, "").replace(/[•*#_`]/g, " ").replace(/https?:\/\/\S+/g, "посилання");
+    const u = new SpeechSynthesisUtterance(clean);
+    const v = pickVoice();
+    u.lang = v ? v.lang : "uk-UA"; u.rate = 1; u.pitch = 1;   // природна висота: штучне зниження жіночого голосу звучить неприродно
     if (v) u.voice = v;
+    if (!isMaleVoice(v) && !voiceWarned) {
+      voiceWarned = true;
+      toast(v ? "На цьому пристрої немає чоловічого українського голосу" : "На цьому пристрої немає українського голосу");
+    }
     speechSynthesis.speak(u);
   } catch (e) {}
 }
+function fillVoiceSelect() {
+  const sel = $("setVoiceName"); if (!sel) return;
+  const list = ukVoices(), auto = pickVoice();
+  sel.innerHTML = `<option value="">Автоматично${auto ? ` (${esc(auto.name)})` : ""}</option>`
+    + list.map(v => `<option value="${esc(v.name)}"${v.name === agent.voiceName ? " selected" : ""}>${esc(v.name)}${isMaleVoice(v) ? " — чоловічий" : FEMALE_RE.test(v.name) ? " — жіночий" : ""}</option>`).join("");
+  $("setVoiceHint").textContent = !list.length ? "Український голос на цьому пристрої не знайдено."
+    : list.some(isMaleVoice) ? "Чоловічий український голос є." : "Чоловічого українського голосу на цьому пристрої немає (на iPhone Apple має лише жіночий).";
+}
+if ("speechSynthesis" in window) speechSynthesis.addEventListener?.("voiceschanged", fillVoiceSelect);
 
 function runAction(a) {
   const i = a.input || {};
@@ -467,11 +496,18 @@ addEventListener("keydown", e => {
 /* ====== налаштування агента ====== */
 function openSettings() {
   $("setUrl").value = agent.url || ""; $("setCode").value = agent.code || ""; $("setVoice").checked = !!agent.voice;
+  fillVoiceSelect();
   $("setNote").className = "set-note"; $("setNote").textContent = "Код доступу зберігається лише в цьому браузері. Ключ Claude API на сайт не потрапляє — він лежить на сервері агента.";
   $("settings").hidden = false; $("backdrop").classList.add("show"); $("setUrl").focus();
 }
 function closeSettings() { $("settings").hidden = true; if (!$("assistant").classList.contains("big")) $("backdrop").classList.remove("show"); setActive(section); }
-function readSettings() { agent.url = $("setUrl").value.trim(); agent.code = $("setCode").value; agent.voice = $("setVoice").checked; }
+function readSettings() { agent.url = $("setUrl").value.trim(); agent.code = $("setCode").value; agent.voice = $("setVoice").checked; agent.voiceName = $("setVoiceName").value; }
+$("setVoiceTest").onclick = () => {
+  const keep = { voice: agent.voice, voiceName: agent.voiceName };
+  agent.voice = true; agent.voiceName = $("setVoiceName").value; voiceWarned = false;
+  speakOut(`Вітаю, ${CONFIG.userName}! Я Властелін. Так звучатиме мій голос.`);
+  Object.assign(agent, keep);
+};
 $("setClose").onclick = closeSettings;
 $("setTest").onclick = async () => {
   readSettings(); $("setNote").className = "set-note"; $("setNote").textContent = "Перевіряю…";

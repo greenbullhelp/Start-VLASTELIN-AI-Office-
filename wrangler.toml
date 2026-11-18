@@ -20,3 +20,7 @@ id = "3c65bce512414120bf7bde39b2f2bdc4"
 binding = "DB"
 database_name = "vlastelin"
 database_id = "545dc607-26a5-43c7-bdbd-3568830ce815"
+
+# Trader XAU: runs every minute.
+[triggers]
+crons = ["* * * * *"]

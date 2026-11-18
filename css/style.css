@@ -528,3 +528,37 @@ body.eco .spanel,body.eco .sp-dim{animation:none}
 .pg-ring text{fill:var(--gold-2);font-size:26px;font-weight:800;font-family:inherit}
 .sp-bars li small{font-size:11.5px}
 @media (max-width:480px){.mk-price b{font-size:34px}.pg-ring{width:96px;height:96px}.sp-form.sp-grid{grid-template-columns:1fr}}
+/* ===== Агент «Трейдер XAU» ===== */
+.tr .sp-actions{margin-top:10px}
+.tr-st{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);margin:4px 0 0}
+.tr-st b{color:var(--gold-2)}
+.tr-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--red);box-shadow:0 0 8px currentColor}
+.tr-dot.ok{background:var(--green)}
+.tr-dot.pause{background:var(--gold)}
+.tr-bias{font-size:14px;line-height:1.6;margin:0 0 10px}
+.tr-bias .up,.tr-tab .up,.tr-lv .up,.tr-big .up,.tr-pos .up,.tr-tab td.up{color:var(--green)}
+.tr-bias .dn,.tr-tab .dn,.tr-big .dn,.tr-pos .dn,.tr-tab td.dn{color:var(--red)}
+.tr-meter{position:relative;display:block;height:8px;margin-top:6px;background:linear-gradient(90deg,rgba(255,92,92,.75),rgba(140,160,190,.25) 50%,rgba(70,220,140,.75))}
+.tr-meter i{position:absolute;top:-4px;width:4px;height:16px;margin-left:-2px;background:#fff;box-shadow:0 0 8px #fff}
+.tr-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tr-tab{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+.tr-tab th{text-align:left;font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:6px 8px;border-bottom:1px solid rgba(63,184,255,.25)}
+.tr-tab td{padding:7px 8px;border-bottom:1px solid rgba(63,184,255,.1);font-variant-numeric:tabular-nums}
+.tr-tab tr.main td{background:rgba(232,183,90,.08)}
+.tr-tab small{color:var(--muted);font-size:11px}
+.tr-lv,.tr-big,.tr-log{list-style:none;margin:0;padding:0;font-size:13px}
+.tr-lv li{display:flex;justify-content:space-between;gap:10px;padding:5px 8px;border-left:2px solid rgba(70,220,140,.6);margin-bottom:3px;background:rgba(63,184,255,.04)}
+.tr-lv li.above{border-left-color:rgba(255,92,92,.6)}
+.tr-lv li.near{background:rgba(232,183,90,.16);border-left-color:var(--gold)}
+.tr-lv span{color:var(--muted)}
+.tr-lv b{font-variant-numeric:tabular-nums}
+.tr-big li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;padding:4px 0;border-bottom:1px solid rgba(63,184,255,.08)}
+.tr-big span{color:var(--muted);font-variant-numeric:tabular-nums}
+.tr-sub{margin-top:14px}
+.tr-sec{margin:18px 0 10px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.tr-log li{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid rgba(63,184,255,.08);line-height:1.45}
+.tr-log li span{flex:none;color:var(--muted);font-family:var(--mono);font-size:12px}
+.tr-f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.tr-pos.long{box-shadow:inset 3px 0 0 var(--green)}
+.tr-pos.short{box-shadow:inset 3px 0 0 var(--red)}
+.tr-pos p{margin:6px 0}

@@ -14,6 +14,8 @@
  *   BUDGET             — KV-простір для обліку витрат за день     (прив'язка в wrangler.toml)
  */
 
+import { runTrader, traderView, traderControl, traderReport } from './trader.js';
+
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const DEFAULT_FAST = 'claude-haiku-5-5';
 // Token economy: short history window, capped message length, low effort for routine chat.
@@ -247,6 +249,11 @@ const SERVER_TOOLS = [
     input_schema: { type: 'object', properties: {} }
   },
   {
+    name: 'trader_report',
+    description: 'Отримати стан агента «Трейдер XAU» (паперова торгівля золотом XAU/USDT): баланс, статистику, відкриту позицію, аналіз 4H→5M (VWAP, POC, CVD), останні угоди й події. Лише читання.',
+    input_schema: { type: 'object', properties: {} }
+  },
+  {
     name: 'propose',
     description: 'Запропонувати керівнику задачу для покращення офісу, сайту чи бізнесу. Пропозиція лише чекає рішення: керівник сам натисне «Схвалити» або «Відхилити». Пропонуй тільки корисне й конкретне, не дублюй відкриті пропозиції.',
     input_schema: { type: 'object', properties: {
@@ -274,6 +281,7 @@ function systemPrompt(ctx = {}, extra = {}) {
     'ПАМ\'ЯТЬ: у тебе є довготривала пам\'ять (нижче). Коли керівник каже «запам\'ятай», повідомляє важливий факт, вподобання, рішення чи ціль — виклич remember і коротко скажи, що запам\'ятав. Коли просить забути або факт застарів — forget. Не записуй дрібниць, дублікатів і секретів.',
     'АНАЛІЗ: аналізуй на основі даних нижче (проєкти, події, технічні завдання, пам\'ять) і, коли йдеться про сайт чи розробку, github_status. Давай висновки й 1–3 конкретні наступні кроки. Не вигадуй цифр, яких немає.',
     'ПРОПОЗИЦІЇ: якщо бачиш корисне покращення або керівник просить ідеї — виклич propose (з оцінкою вартості) замість того, щоб робити самому. Не більше 3 пропозицій за раз. Скажи, що пропозиції чекають рішення в розділі «Пропозиції».',
+    'КОМАНДА: у тебе є агент «Трейдер XAU» — паперова торгівля XAU/USDT за потоком ордерів (аналіз 4H→2H→1H→30M→15M→5M; вхід на 5M/15M; VWAP, Volume Profile, HVN/LVN, CVD, імбаланси футпрінта, великі угоди). Коли керівник питає про торгівлю, золото чи статистику трейдера — виклич trader_report і відповідай за фактами. Реальними грошима трейдер не торгує; не давай інвестиційних гарантій.',
     RULES,
     `Зараз: ${String(ctx.now || '').slice(0, 60)}. Місто: ${String(ctx.city || '').slice(0, 60)}.`,
     `Проєкти: ${projects.map(p => `${String(p.name).slice(0, 80)} (${p.progress | 0}%)`).join('; ') || 'немає'}.`,
@@ -319,6 +327,11 @@ function keyDiagnostics(raw) {
 }
 
 export default {
+  // Трейдер XAU: один цикл щохвилини (розклад у wrangler.toml)
+  async scheduled(event, env, ctx) {
+    if (!env.DB) return;
+    ctx.waitUntil(runTrader(env.DB, event.scheduledTime || Date.now()).catch(e => console.error('Trader error:', e && e.message)));
+  },
   async fetch(request, env, ctx) {
     const allowed = (env.ALLOWED_ORIGINS || 'https://greenbullhelp.github.io').split(',').map(s => s.trim()).filter(Boolean);
     const origin = request.headers.get('Origin') || '';
@@ -337,8 +350,8 @@ export default {
         budget: Boolean(env.BUDGET), storage: Boolean(env.DB), protected: Boolean(env.ACCESS_CODE), configured: Boolean(env.ANTHROPIC_API_KEY) }, 200, cors);
     }
     const path = url.pathname.replace(/\/+$/, '');
-    const route = ['state', 'memory', 'proposals'].find(r => path.endsWith('/' + r)) || 'chat';
-    const METHODS = { state: ['GET', 'PUT'], memory: ['GET', 'POST', 'PUT', 'DELETE'], proposals: ['GET', 'POST'], chat: ['POST'] };
+    const route = ['state', 'memory', 'proposals', 'trader'].find(r => path.endsWith('/' + r)) || 'chat';
+    const METHODS = { state: ['GET', 'PUT'], memory: ['GET', 'POST', 'PUT', 'DELETE'], proposals: ['GET', 'POST'], trader: ['GET', 'POST'], chat: ['POST'] };
     if (!METHODS[route].includes(request.method)) return json({ error: 'Метод не підтримується' }, 405, cors);
     if (!okOrigin) return json({ error: 'Доступ дозволено лише з сайту офісу' }, 403, cors);
     if (env.ACCESS_CODE && request.headers.get('X-Access-Code') !== env.ACCESS_CODE) return json({ error: 'Невірний код доступу' }, 401, cors);
@@ -352,6 +365,11 @@ export default {
           if (request.method === 'GET') return json({ state: await readState(env.DB), now: Date.now() }, 200, cors);
           const r = await writeState(env.DB, b);
           return json(r.data, r.status, cors);
+        }
+        if (route === 'trader') {
+          if (request.method === 'GET') return json(await traderView(env.DB), 200, cors);
+          const r = await traderControl(env.DB, b);
+          return json(r, r.error ? 400 : 200, cors);
         }
         if (route === 'memory') {
           if (request.method === 'GET') return json({ memory: await listMemory(env.DB), max: MEM_MAX }, 200, cors);
@@ -415,6 +433,7 @@ export default {
       if (b.name === 'forget') { const r = await deleteMemory(env.DB, i.id); if (!r.error) { changed.memory = true; notes.push({ type: 'forget', text: r.text, id: r.id }); } return r.error || `Забув №${r.id}.`; }
       if (b.name === 'propose') { const r = await addProposal(env.DB, i); if (!r.error) { changed.proposals = true; notes.push({ type: 'propose', text: r.title, id: r.id, cost: r.cost }); } return r.error || `Пропозицію №${r.id} додано, чекає рішення керівника.`; }
       if (b.name === 'github_status') return githubStatus(env);
+      if (b.name === 'trader_report') return traderReport(env.DB);
       return 'Невідомий інструмент';
     }
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -450,7 +469,7 @@ export default {
       for (const b of uses) {
         let out;
         if (TOOLS.some(t => t.name === b.name)) { actions.push({ name: b.name, input: b.input || {} }); out = 'Буде виконано на сайті керівника.'; }
-        else if (SERVER_TOOLS.some(t => t.name === b.name)) { out = await runServerTool(b); if (b.name === 'github_status') readData = true; }
+        else if (SERVER_TOOLS.some(t => t.name === b.name)) { out = await runServerTool(b); if (b.name === 'github_status' || b.name === 'trader_report') readData = true; }
         else out = 'Невідомий інструмент';
         results.push({ type: 'tool_result', tool_use_id: b.id, content: String(out) });
       }

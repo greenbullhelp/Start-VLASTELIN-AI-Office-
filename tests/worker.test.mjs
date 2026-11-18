@@ -102,7 +102,7 @@ globalThis.fetch = async (url, opts) => {
 };
 r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'запам’ятай: офіс у Києві' }], context: { tasks: [{ section: 'dev', title: 'Нова кнопка', status: 'new' }] } }), senv); j = await r.json();
 ok(apiCalls === 1 && j.reply === 'Запам’ятав.' && j.notes[0].type === 'remember' && j.changed.memory, 'remember: executed on server, one API call');
-ok(bodies[0].system.includes('Керівник любить дуже короткі звіти') && bodies[0].system.includes('[Розробка сайту] Нова кнопка') && bodies[0].tools.length === 7, 'prompt has memory, tasks and all tools');
+ok(bodies[0].system.includes('Керівник любить дуже короткі звіти') && bodies[0].system.includes('[Розробка сайту] Нова кнопка') && bodies[0].tools.length === 8 && bodies[0].tools.some(t => t.name === 'trader_report'), 'prompt has memory, tasks and all tools');
 r = await worker.fetch(mem('GET'), senv); j = await r.json(); ok(j.memory.length === 2, 'memory persisted from chat');
 apiCalls = 0; r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'забудь про звіти' }] }), senv); j = await r.json();
 ok(apiCalls === 1 && j.reply.includes('Забув') && j.notes[0].type === 'forget', 'forget without text gets a reply, no second call');
@@ -129,3 +129,47 @@ bodies = [];
 r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'привіт' }], context: { summary: 'Фінанси: баланс 1 000 ₴' } }), senv); j = await r.json();
 ok(bodies[0].system.includes('Зведення розділів офісу:\nФінанси: баланс 1 000 ₴'), 'office summary in prompt');
 ok(bodies[0].tools.find(t => t.name === 'propose').input_schema.properties.section.enum.includes('legal'), 'new sections allowed for proposals');
+// ===== Trader XAU (paper trading, order flow) =====
+const T = await import('../worker/trader.js');
+const cfg = T.cleanCfg({});
+ok(T.cleanCfg({ risk: 50, stack: 2.6, minRR: 9, rr: 2 }).risk === 5 && T.cleanCfg({ stack: 2.6 }).stack === 3 && T.cleanCfg({ minRR: 9, rr: 2 }).minRR === 2, 'trader cfg clamped');
+const vp = T.profile([{ l: 100, h: 110, v: 10 }, { l: 104, h: 106, v: 100 }, { l: 100, h: 101, v: 1 }]);
+ok(vp.poc >= 104 && vp.poc <= 106 && vp.val >= 103.8 && vp.vah <= 106.2, 'volume profile POC / value area');
+ok(T.vwap([{ h: 10, l: 10, c: 10, v: 1 }, { h: 20, l: 20, c: 20, v: 3 }]).v === 17.5, 'vwap');
+const fp = T.addTrades({}, [100, 100.5, 101, 101.5].flatMap((p, i) => [{ p, q: 10, buy: true, t: 6e5 + i }, { p: p - .5, q: 1, buy: false, t: 6e5 + i }]).concat([{ p: 101, q: 25, buy: true, t: 6e5 + 9 }]), cfg);
+const imb = T.imbalances(fp.bars[6e5], 3);
+ok(imb.buyStack >= 3 && imb.sellStack === 0, 'stacked buy imbalances found');
+ok(fp.big.length === 1 && fp.big[0].q === 25 && fp.big[0].buy, 'big trades >= bigLot recorded');
+const bar = { t: 6e5, o: 100.4, h: 102, l: 99.9, c: 101.6, v: 50, bv: 40 };
+const levels = [{ p: 100, n: 'POC 1H' }, { p: 106, n: 'VAH 1H' }];
+let su = T.findSetup({ bias: .6, levels, bar, fpBar: fp.bars[6e5], big: fp.big, c15: [{ v: 10, bv: 8 }], atr5: 1, cfg, price: 101.6 });
+ok(su.dir === 1 && su.sl < 100 && su.tp === 106 && su.why.includes('POC 1H'), 'long setup at level with order-flow confirmation');
+su = T.findSetup({ bias: .1, levels, bar, fpBar: fp.bars[6e5], big: fp.big, c15: [], atr5: 1, cfg, price: 101.6 });
+ok(su.dir === 0 && su.why.includes('нейтральний'), 'no trade on neutral bias');
+su = T.findSetup({ bias: .6, levels, bar: { ...bar, bv: 10 }, fpBar: null, big: [], c15: [], atr5: 1, cfg, price: 101.6 });
+ok(su.dir === 0 && su.why.includes('дельт'), 'no trade without delta confirmation');
+// full cycle with a fake exchange: candles rising, then a trade at the target closes the position
+const TDB = memD1(); let px = 3000, tid = 0;
+const kl = (n, step) => Array.from({ length: n }, (_, i) => { const t = Date.now() - (n - i) * step, o = px - (n - i) * .2; return [t, String(o), String(o + 1), String(o - 1), String(o + .5), '100', t + step - 1, '0', 10, '70']; });
+globalThis.fetch = async u => {
+  u = String(u);
+  if (u.includes('klines')) { const iv = new URL(u).searchParams.get('interval'); return new Response(JSON.stringify(kl(+new URL(u).searchParams.get('limit'), { '5m': 3e5, '15m': 9e5, '30m': 18e5, '1h': 36e5, '2h': 72e5, '4h': 144e5 }[iv]))); }
+  if (u.includes('aggTrades')) return new Response(JSON.stringify([{ a: ++tid, p: String(px), q: '1', m: false, T: Date.now() }]));
+  return new Response('{}', { status: 404 });
+};
+let tst = await T.runTrader(TDB);
+ok(!tst.err && tst.an && tst.an.bias > 0 && tst.an.tfs.length === 6, 'trader cycle: analysis on 6 timeframes');
+tst.pos = { dir: 1, qty: 1, entry: 2990, sl: 2980, tp: 2999, opened: Date.now(), riskUsd: 10, why: 'test' };
+await TDB.prepare('UPDATE trader SET v = ? WHERE k = ?').bind(JSON.stringify(tst), 'st').run();
+tst = await T.runTrader(TDB);
+const tv = await T.traderView(TDB);
+ok(!tv.pos && tv.trades.length === 1 && tv.trades[0].exitWhy === 'ціль' && tv.stats.n === 1 && tv.stats.wins === 1 && tv.bal > 10000, 'position closed at target, stats updated');
+const tenv = { ...env, DB: TDB };
+const trq = (method, body, h = { 'X-Access-Code': 'secret' }) => new Request('https://w.dev/trader', { method, headers: { Origin: O, 'Content-Type': 'application/json', ...h }, body: body ? JSON.stringify(body) : undefined });
+r = await worker.fetch(trq('GET', null, { 'X-Access-Code': 'bad' }), tenv); ok(r.status === 401, 'trader requires access code');
+r = await worker.fetch(trq('POST', { action: 'config', cfg: { risk: 2, bigLot: 50 } }), tenv); j = await r.json(); ok(j.ok, 'trader config saved');
+r = await worker.fetch(trq('POST', { action: 'stop' }), tenv);
+r = await worker.fetch(trq('GET'), tenv); j = await r.json(); ok(j.cfg.risk === 2 && j.cfg.bigLot === 50 && j.cfg.on === false && j.stats.n === 1, 'trader view via route');
+r = await worker.fetch(trq('POST', { action: 'reset' }), tenv); r = await worker.fetch(trq('GET'), tenv); j = await r.json(); ok(j.trades.length === 0 && j.bal === 10000 && j.cfg.risk === 2, 'trader reset keeps settings');
+r = await worker.fetch(trq('POST', { action: 'hack' }), tenv); ok(r.status === 400, 'unknown trader action rejected');
+ok((await T.traderReport(TDB)).includes('Трейдер XAU'), 'trader report text for Vlastelin');

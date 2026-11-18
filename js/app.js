@@ -145,9 +145,10 @@ async function askAgent(text, imgs = []) {
     if (j.budget) lastMeta = { ...(lastMeta || {}), budget: j.budget };
     if (!r.ok) throw new Error(j.error || `Помилка ${r.status}`);
     const done = (j.actions || []).map(runAction).filter(Boolean);
-    const NOTE = { remember: "запам'ятав", forget: "забув", propose: "пропозиція" };
+    const NOTE = { remember: "запам'ятав", forget: "забув", propose: "пропозиція", assign: "доручив" };
     for (const n of j.notes || []) if (NOTE[n.type]) done.push(`${NOTE[n.type]}: «${String(n.text).slice(0, 80)}»`);
     if (j.changed && (j.changed.memory || j.changed.proposals)) loadBrain(true);
+    if (j.changed && j.changed.team) loadTeam(true);
     let reply = (j.reply || "").trim();
     if (!reply) reply = done.length ? "Готово: " + done.join("; ") + "." : "Готово.";
     history.push({ role: "assistant", content: reply + (done.length ? `\n[виконано: ${done.join("; ")}]` : ""), model: j.model });
@@ -1136,11 +1137,74 @@ VIEWS.market = { ico: "◭", title: "РИНОК · XAU/USDT", render() {
 
 /* --- Розробка гри --- */
 const GAME_FIELDS = [["name", "Назва гри"], ["genre", "Жанр"], ["platform", "Платформи (ПК, мобільні…)"], ["engine", "Рушій (Unity, Godot…)"], ["idea", "Концепт в одному реченні"]];
+/* --- Команда агентів відділу гри: Властелін доручає → агент працює в хмарі → Контролер перевіряє → керівник схвалює --- */
+const team = { d: null, err: "", at: 0, busy: false, open: new Set(), f: "all" };
+const T_STATUS = { queued: "У черзі", working: "В роботі", review: "Перевіряє Контролер", ready: "Чекає вашого рішення", done: "Схвалено", rejected: "Скасовано" };
+async function loadTeam(force = false) {
+  if (!agentReady()) { team.err = "Підключіть AI-агента в «Налаштуваннях» — агенти працюють на сервері."; return; }
+  if (team.busy || (!force && Date.now() - team.at < 15e3)) return;
+  team.busy = true; team.at = Date.now();
+  try { team.d = await brainApi("/team"); team.err = ""; } catch (e) { team.err = e.message || "Немає зв'язку з сервером"; }
+  finally { team.busy = false; refreshPanel("game"); }
+}
+// Безпечний markdown: спершу екрануємо, потім заголовки, жирний, списки, таблиці
+function mdSafe(src) {
+  const inl = t => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const out = []; let list = null, table = null, code = null;
+  const flush = () => { if (list) { out.push(`<${list.t}>${list.i.join("")}</${list.t}>`); list = null; } if (table) { out.push(`<div class="md-tw"><table>${table.map((r, i) => `<tr>${r.map(c => i ? `<td>${inl(c)}</td>` : `<th>${inl(c)}</th>`).join("")}</tr>`).join("")}</table></div>`); table = null; } };
+  for (const line of String(src || "").split(/\r?\n/)) {
+    if (/^\s*```/.test(line)) { if (code) { out.push(`<pre>${esc(code.join("\n"))}</pre>`); code = null; } else { flush(); code = []; } continue; }
+    if (code) { code.push(line); continue; }
+    let m;
+    if (/^\s*\|.*\|\s*$/.test(line)) { if (list) flush(); if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) continue; (table = table || []).push(line.trim().slice(1, -1).split("|").map(c => c.trim())); continue; }
+    if ((m = line.match(/^\s*(?:[-*•]|(\d+)[.)])\s+(.*)/))) { const t = m[1] ? "ol" : "ul"; if (table || (list && list.t !== t)) flush(); list = list || { t, i: [] }; list.i.push(`<li>${inl(m[2])}</li>`); continue; }
+    flush();
+    if ((m = line.match(/^(#{1,4})\s+(.*)/))) out.push(`<h${Math.min(6, m[1].length + 3)}>${inl(m[2])}</h${Math.min(6, m[1].length + 3)}>`);
+    else if (line.trim()) out.push(`<p>${inl(line)}</p>`);
+  }
+  if (code) out.push(`<pre>${esc(code.join("\n"))}</pre>`);
+  flush(); return out.join("");
+}
+function teamTask(t) {
+  const R = (team.d.roles || []).find(r => r.k === t.role) || { name: t.role, icon: "◆" };
+  const act = t.status === "ready" ? `<div class="tm-dec"><textarea id="tmFb${t.id}" rows="2" placeholder="Що виправити (для «На доопрацювання»)"></textarea>
+      <div class="sp-actions"><button class="btn-gold" data-act="tm-ok" data-id="${t.id}">✓ Схвалити${t.role === "programmer" ? (team.d.github ? " і передати в GitHub" : "") : ""}</button><button class="btn-ghost" data-act="tm-redo" data-id="${t.id}">↺ На доопрацювання</button></div></div>` : "";
+  return `<details class="tm-task st-${t.status}" data-id="${t.id}"${team.open.has(String(t.id)) ? " open" : ""}>
+    <summary><span class="tm-who">${R.icon} ${esc(R.name)}</span> <b>№${t.id} ${esc(t.title)}</b> <span class="tm-st">${T_STATUS[t.status] || t.status}${t.score ? ` · ${t.score}/10` : ""}</span></summary>
+    <div class="tm-body"><p class="sp-note">ТЗ: ${esc(t.brief)}</p>
+      ${t.review ? `<p class="tm-rev">◉ Контролер: ${esc(t.review)}</p>` : ""}
+      ${t.feedback && t.status === "queued" ? `<p class="tm-rev">↺ ${esc(t.feedback)}</p>` : ""}
+      ${t.issue ? `<p><a href="${esc(t.issue)}" target="_blank" rel="noopener">Задача в GitHub ↗</a></p>` : ""}
+      ${t.result ? `<div class="md">${mdSafe(t.result)}</div>` : `<p class="empty">${t.status === "working" ? "Агент працює…" : "Результату ще немає"}</p>`}
+      ${act}
+      <p class="sp-note">Спроб: ${t.attempts} · витрати $${(+t.cost).toFixed(3)} · ${tTime(t.updated)} <button class="btn-ghost tm-x" data-act="tm-del" data-id="${t.id}">видалити</button></p></div></details>`;
+}
+function teamBlock() {
+  loadTeam();
+  if (!team.d) return `<section class="sp-box"><h3>Команда агентів</h3><p class="empty">${esc(team.err || "Завантаження…")}</p></section>`;
+  const d = team.d, tasks = d.tasks || [], wait = tasks.filter(t => t.status === "ready").length;
+  const F = { all: "Усі", ready: "Чекають рішення", active: "В роботі", done: "Схвалені" };
+  const shown = tasks.filter(t => team.f === "all" || (team.f === "active" ? ["queued", "working", "review"].includes(t.status) : t.status === team.f));
+  const roles = d.roles.filter(r => r.k !== "controller").map(r => `<option value="${r.k}">${r.icon} ${esc(r.name)}</option>`).join("");
+  return `<section class="sp-box tm"><h3>Команда агентів · відділ гри</h3>
+    <p class="sp-note">Ви говорите з Властеліном → він доручає задачі агентам → агент працює в хмарі (1–3 хв) → <b>Контролер</b> перевіряє якість і за потреби повертає → ви схвалюєте. Схвалені документи стають «біблією гри» для всіх агентів.</p>
+    <div class="tm-roles">${d.roles.map(r => `<div class="tm-role${r.busy ? " busy" : ""}"><b>${r.icon} ${esc(r.name)}</b><span>${esc(r.job)}</span><i>${r.busy ? "● працює" : "○ вільний"} · у черзі ${r.queued} · ${r.k === "controller" ? "перевірок" : "схвалено"} ${r.done}</i></div>`).join("")}</div>
+    <p class="sp-note">Витрати агентів сьогодні: <b>$${d.budget.spent}</b> з $${d.budget.limit} (далі агенти чекають до завтра) · GitHub гри: ${d.github ? esc(d.repo) : "не підключено — схвалені специфікації Програміста лишаються тут"}</p>
+    <div class="sp-form sp-grid tm-new"><select id="tmRole" aria-label="Агент">${roles}</select><input id="tmTitle" maxlength="140" placeholder="Назва задачі"><textarea id="tmBrief" rows="2" maxlength="3000" placeholder="Що зробити (ТЗ)"></textarea><button class="btn-gold" data-act="tm-add">Доручити</button></div>
+    <div class="tr-filt">${Object.entries(F).map(([k, t]) => `<button class="${team.f === k ? "on" : ""}" data-act="tm-f" data-k="${k}">${t}${k === "ready" && wait ? ` (${wait})` : ""}</button>`).join("")}</div>
+    <div class="tm-list">${shown.map(teamTask).join("") || `<p class="empty">Задач ще немає. Напишіть Властеліну, наприклад: «Придумайте сюжет і економіку моєї гри».</p>`}</div>
+    ${askBtn("Доручити команді через Властеліна", "Розподіли між агентами відділу гри перші задачі за моїм концептом: сюжет і світ, економіка, геймдизайн першого рівня, технічна архітектура.")}
+  </section>`;
+}
+async function tmAct(body, msg) {
+  try { await brainApi("/team", "POST", body); if (msg) toast(msg); } catch (e) { toast(e.message || "Помилка сервера"); }
+  loadTeam(true);
+}
 VIEWS.game = { ico: "◈", title: "РОЗРОБКА ГРИ", render() {
   const v = colList("game"), n = countBy(v, "st"), c = wsOf("game").concept || {};
   const bugs = v.filter(x => x.kind === "bug" && x.st !== "done").length, prog = share(n.done || 0, v.length);
   const kinds = COL.game.fields[1].opts.map(([k, t]) => { const all = v.filter(x => x.kind === k); return [t, share(all.filter(x => x.st === "done").length, all.length), `${all.filter(x => x.st === "done").length}/${all.length}`]; }).filter(r => r[2] !== "0/0");
-  return `<div class="sp-tiles">${tile("Прогрес гри", prog + "%", `${n.done || 0} з ${v.length} задач`)}${tile("В роботі", n.work || 0)}${tile("Відкриті баги", bugs ? `<span class="dn">${bugs}</span>` : 0)}${tile("Заплановано", n.todo || 0)}</div>
+  return `${teamBlock()}<div class="sp-tiles">${tile("Прогрес гри", prog + "%", `${n.done || 0} з ${v.length} задач`)}${tile("В роботі", n.work || 0)}${tile("Відкриті баги", bugs ? `<span class="dn">${bugs}</span>` : 0)}${tile("Заплановано", n.todo || 0)}</div>
     <section class="sp-box"><h3>Концепт гри</h3><div class="sp-form sp-grid">${GAME_FIELDS.map(([k, t]) => `<input id="gc_${k}" placeholder="${t}" aria-label="${t}" title="${t}" maxlength="${k === "idea" ? 200 : 60}" value="${esc(c[k] || "")}" data-enter="game-save"${k === "idea" ? ' class="wide"' : ""}>`).join("")}
       <button class="btn-gold" data-act="game-save">Зберегти концепт</button></div></section>
     ${colForm("game", "Беклог: нова задача")}
@@ -1287,6 +1351,15 @@ async function trAct(body, msg) {
   loadTrader(true);
 }
 const PANEL_ACTS = {
+  "tm-add"() {
+    const title = $("tmTitle").value.trim(), brief = $("tmBrief").value.trim();
+    if (!title || !brief) return toast("Заповніть назву і ТЗ");
+    tmAct({ action: "assign", role: $("tmRole").value, title, brief }, "Задачу доручено");
+  },
+  "tm-ok"(_, el) { tmAct({ id: +el.dataset.id, decision: "approve" }, "Схвалено"); },
+  "tm-redo"(_, el) { const c = ($("tmFb" + el.dataset.id) || {}).value || ""; if (!c.trim()) return toast("Напишіть, що виправити"); tmAct({ id: +el.dataset.id, decision: "rework", comment: c }, "Повернуто на доопрацювання"); },
+  "tm-del"(_, el) { if (confirm("Видалити задачу і її результат?")) tmAct({ id: +el.dataset.id, decision: "delete" }, "Видалено"); },
+  "tm-f"(_, el) { team.f = el.dataset.k; renderPanel(); },
   "tr-start"() { trAct({ action: "start" }, "Трейдера запущено"); },
   "tr-stop"() { trAct({ action: "stop" }, "Трейдер на паузі"); },
   "tr-reload"() { loadTrader(true); },
@@ -1438,7 +1511,7 @@ $("spBody").addEventListener("click", e => {
   const f = PANEL_ACTS[b.dataset.act]; if (f) f(+b.dataset.i, b);
 });
 // розгорнуті угоди лишаються розгорнутими після автооновлення панелі
-$("spBody").addEventListener("toggle", e => { const d = e.target; if (d.classList && d.classList.contains("tr-trade")) trader.open[d.open ? "add" : "delete"](d.dataset.id); }, true);
+$("spBody").addEventListener("toggle", e => { const d = e.target; if (d.classList && d.classList.contains("tr-trade")) trader.open[d.open ? "add" : "delete"](d.dataset.id); if (d.classList && d.classList.contains("tm-task")) team.open[d.open ? "add" : "delete"](d.dataset.id); }, true);
 $("spBody").addEventListener("keydown", e => { const a = e.target.dataset.enter; if (e.key === "Enter" && a) PANEL_ACTS[a](); });
 $("spBody").addEventListener("input", e => {   // повзунок: оновлюємо віджет і підпис без перебудови панелі
   const el = e.target; if (el.dataset.act !== "p-prog") return;
@@ -1523,6 +1596,7 @@ sync.run(true);
 loadBrain();   // лічильник нових пропозицій на кнопці «Властелін»
 renderHomeFin();
 setInterval(() => { if (section === "market" && document.visibilityState === "visible") { loadMarket(true); loadTrader(true); } }, 20000);
+setInterval(() => { if (section === "game" && document.visibilityState === "visible") loadTeam(true); }, 20000);
 setInterval(() => { if (document.visibilityState === "visible") { sync.run(true); loadBrain(); } }, 60000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync.run(true); });
 addEventListener("online", () => sync.run(true));

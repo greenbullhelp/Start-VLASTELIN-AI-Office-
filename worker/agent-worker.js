@@ -15,6 +15,7 @@
  */
 
 import { runTrader, traderView, traderControl, traderReport, traderTeach, traderTrades, loadFund, saveFund } from './trader.js';
+import { ROLES, assignTask, teamView, teamReport, decideTask, runAgents } from './agents.js';
 
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const DEFAULT_FAST = 'claude-haiku-5-5';
@@ -271,6 +272,20 @@ const SERVER_TOOLS = [
     } }
   },
   {
+    name: 'assign_task',
+    description: 'Доручити задачу агенту відділу розробки гри. Агент виконає її у хмарі (за 1–3 хв), Контролер перевірить якість, а керівник схвалить результат у розділі «Розробка гри» → «Команда». Доручай, коли керівник просить щось придумати/спроєктувати/написати для гри. Велику задачу розбий на кілька задач різним агентам. Кожна задача коштує приблизно $0.02–0.10.',
+    input_schema: { type: 'object', properties: {
+      role: { type: 'string', enum: Object.keys(ROLES).filter(k => k !== 'controller'), description: Object.entries(ROLES).filter(([k]) => k !== 'controller').map(([k, r]) => `${k} — ${r.name}: ${r.job}`).join('; ') },
+      title: { type: 'string', description: 'Коротка назва задачі (до 140 символів)' },
+      brief: { type: 'string', description: 'Детальне ТЗ: що зробити, побажання керівника, формат результату' }
+    }, required: ['role', 'title', 'brief'] }
+  },
+  {
+    name: 'team_report',
+    description: 'Отримати стан команди агентів: хто працює, черга задач, оцінки Контролера, що чекає рішення керівника, витрати.',
+    input_schema: { type: 'object', properties: {} }
+  },
+  {
     name: 'propose',
     description: 'Запропонувати керівнику задачу для покращення офісу, сайту чи бізнесу. Пропозиція лише чекає рішення: керівник сам натисне «Схвалити» або «Відхилити». Пропонуй тільки корисне й конкретне, не дублюй відкриті пропозиції.',
     input_schema: { type: 'object', properties: {
@@ -298,6 +313,7 @@ function systemPrompt(ctx = {}, extra = {}) {
     'ПАМ\'ЯТЬ: у тебе є довготривала пам\'ять (нижче). Коли керівник каже «запам\'ятай», повідомляє важливий факт, вподобання, рішення чи ціль — виклич remember і коротко скажи, що запам\'ятав. Коли просить забути або факт застарів — forget. Не записуй дрібниць, дублікатів і секретів.',
     'АНАЛІЗ: аналізуй на основі даних нижче (проєкти, події, технічні завдання, пам\'ять) і, коли йдеться про сайт чи розробку, github_status. Давай висновки й 1–3 конкретні наступні кроки. Не вигадуй цифр, яких немає.',
     'ПРОПОЗИЦІЇ: якщо бачиш корисне покращення або керівник просить ідеї — виклич propose (з оцінкою вартості) замість того, щоб робити самому. Не більше 3 пропозицій за раз. Скажи, що пропозиції чекають рішення в розділі «Пропозиції».',
+    'ВІДДІЛ ГРИ: у тебе є команда агентів — Сценарист, Економіст, Дизайнер, Програміст і Контролер над ними. Керівник говорить лише з тобою: коли він просить щось для гри (сюжет, економіку, дизайн, код), розбий на задачі й доручи через assign_task потрібним агентам (кожному своє, з чітким ТЗ), коротко скажи, кому що доручив. Про стан команди — team_report. Сам документи для гри не пиши — це робота агентів.',
     'КОМАНДА: у тебе є агент «Трейдер XAU» — паперова торгівля XAU/USDT за потоком ордерів (аналіз 4H→2H→1H→30M→15M→5M; вхід на 5M/15M; VWAP, Volume Profile, HVN/LVN, CVD, імбаланси футпрінта, великі угоди). Коли керівник питає про торгівлю, золото чи статистику трейдера — виклич trader_report і відповідай за фактами. Реальними грошима трейдер не торгує; не давай інвестиційних гарантій.',
     'ТРЕНЕР ТРЕЙДЕРА: коли повідомлення починається з «[Тренер]» або керівник навчає трейдера чи описує свою торгівлю — ти Тренер. Спершу виклич trader_report. Потім перетвори слова керівника на налаштування трейдера (trader_teach cfg) там, де це можливо, і завжди запиши суть як урок (trader_teach lesson). Скажи чесно, що застосовано автоматично, а що поки лише записано (новий тип сетапу потребує доопрацювання коду — тоді запропонуй це через propose). Під час розбору угод: аналізуй сетапи, MFE, вибір 2R/3R і пропонуй конкретні зміни, але застосовуй їх лише після згоди керівника.',
     RULES,
@@ -417,6 +433,8 @@ export default {
     ctx.waitUntil((async () => {
       await runTrader(env.DB, event.scheduledTime || Date.now()).catch(e => console.error('Trader error:', e && e.message));
       await fundamentalBrief(env).catch(e => console.error('Fundamental error:', e && e.message));
+      const key = cleanKey(env.ANTHROPIC_API_KEY);
+      if (key) await runAgents(env.DB, { ...env, __apiKey: key }).then(r => r && !r.idle && console.log('Agents:', JSON.stringify(r))).catch(e => console.error('Agents error:', e && e.message));
     })());
   },
   async fetch(request, env, ctx) {
@@ -437,8 +455,8 @@ export default {
         budget: Boolean(env.BUDGET), storage: Boolean(env.DB), protected: Boolean(env.ACCESS_CODE), configured: Boolean(env.ANTHROPIC_API_KEY) }, 200, cors);
     }
     const path = url.pathname.replace(/\/+$/, '');
-    const route = ['state', 'memory', 'proposals', 'trader'].find(r => path.endsWith('/' + r)) || 'chat';
-    const METHODS = { state: ['GET', 'PUT'], memory: ['GET', 'POST', 'PUT', 'DELETE'], proposals: ['GET', 'POST'], trader: ['GET', 'POST'], chat: ['POST'] };
+    const route = ['state', 'memory', 'proposals', 'trader', 'team'].find(r => path.endsWith('/' + r)) || 'chat';
+    const METHODS = { state: ['GET', 'PUT'], memory: ['GET', 'POST', 'PUT', 'DELETE'], proposals: ['GET', 'POST'], trader: ['GET', 'POST'], team: ['GET', 'POST'], chat: ['POST'] };
     if (!METHODS[route].includes(request.method)) return json({ error: 'Метод не підтримується' }, 405, cors);
     if (!okOrigin) return json({ error: 'Доступ дозволено лише з сайту офісу' }, 403, cors);
     if (env.ACCESS_CODE && request.headers.get('X-Access-Code') !== env.ACCESS_CODE) return json({ error: 'Невірний код доступу' }, 401, cors);
@@ -461,6 +479,12 @@ export default {
           if (b.action === 'fund') { const f = await fundamentalBrief(env, true); return json(f.error ? { error: f.error } : { ok: true, fund: f }, f.error ? 429 : 200, cors); }
           const r = await traderControl(env.DB, b);
           return json(r, r.error ? 400 : 200, cors);
+        }
+        if (route === 'team') {
+          if (request.method === 'GET') return json(await teamView(env.DB, env), 200, cors);
+          if (b.action === 'assign') { const r = await assignTask(env.DB, b); return json(r, r.error ? 400 : 200, cors); }
+          const r = await decideTask(env.DB, env, b);
+          return json(r.data, r.status, cors);
         }
         if (route === 'memory') {
           if (request.method === 'GET') return json({ memory: await listMemory(env.DB), max: MEM_MAX }, 200, cors);
@@ -515,7 +539,7 @@ export default {
     const tools = env.DB ? ALL_TOOLS : [...TOOLS, SERVER_TOOLS.find(t => t.name === 'github_status')];
 
     const actions = [], notes = [], texts = [];
-    let cost = 0, used = model, data = {}, changed = { memory: false, proposals: false };
+    let cost = 0, used = model, data = {}, changed = { memory: false, proposals: false, team: false };
     // Server-side tools: executed here; their result goes back to Claude only when it is needed
     // (data to read, or no text answer yet). This keeps most turns to a single API call.
     async function runServerTool(b) {
@@ -526,6 +550,8 @@ export default {
       if (b.name === 'github_status') return githubStatus(env);
       if (b.name === 'trader_report') return traderReport(env.DB);
       if (b.name === 'trader_teach') return traderTeach(env.DB, i);
+      if (b.name === 'assign_task') { const r = await assignTask(env.DB, i); if (!r.error) { changed.team = true; notes.push({ type: 'assign', text: `${r.name}: ${r.title}`, id: r.id }); } return r.error || `Задачу №${r.id} доручено: ${r.name}. Результат після перевірки Контролером з'явиться в «Розробка гри» → «Команда».`; }
+      if (b.name === 'team_report') return teamReport(env.DB, env);
       return 'Невідомий інструмент';
     }
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -561,7 +587,7 @@ export default {
       for (const b of uses) {
         let out;
         if (TOOLS.some(t => t.name === b.name)) { actions.push({ name: b.name, input: b.input || {} }); out = 'Буде виконано на сайті керівника.'; }
-        else if (SERVER_TOOLS.some(t => t.name === b.name)) { out = await runServerTool(b); if (b.name === 'github_status' || b.name === 'trader_report') readData = true; }
+        else if (SERVER_TOOLS.some(t => t.name === b.name)) { out = await runServerTool(b); if (b.name === 'github_status' || b.name === 'trader_report' || b.name === 'team_report') readData = true; }
         else out = 'Невідомий інструмент';
         results.push({ type: 'tool_result', tool_use_id: b.id, content: String(out) });
       }

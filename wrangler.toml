@@ -9,6 +9,10 @@ compatibility_date = "2026-11-01"
 [vars]
 # Daily spending cap in USD; the worker answers 429 once today's spend reaches it.
 DAILY_BUDGET_USD = "0.50"
+# Part of the daily cap the game-department agents may spend (each task ~$0.03-0.08).
+AGENTS_DAILY_USD = "0.30"
+# Game repository for the Programmer agent (issue with label `agent` -> Claude Code Action -> PR).
+# GAME_REPO = "greenbullhelp/vlastelin-game"   (token: npx wrangler secret put GH_TOKEN)
 
 # Per-day spend counter for the budget above.
 [[kv_namespaces]]

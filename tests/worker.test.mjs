@@ -102,7 +102,7 @@ globalThis.fetch = async (url, opts) => {
 };
 r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'запам’ятай: офіс у Києві' }], context: { tasks: [{ section: 'dev', title: 'Нова кнопка', status: 'new' }] } }), senv); j = await r.json();
 ok(apiCalls === 1 && j.reply === 'Запам’ятав.' && j.notes[0].type === 'remember' && j.changed.memory, 'remember: executed on server, one API call');
-ok(bodies[0].system.includes('Керівник любить дуже короткі звіти') && bodies[0].system.includes('[Розробка сайту] Нова кнопка') && bodies[0].tools.length === 9 && bodies[0].tools.some(t => t.name === 'trader_report') && bodies[0].tools.some(t => t.name === 'trader_teach'), 'prompt has memory, tasks and all tools');
+ok(bodies[0].system.includes('Керівник любить дуже короткі звіти') && bodies[0].system.includes('[Розробка сайту] Нова кнопка') && bodies[0].tools.length === 11 && bodies[0].tools.some(t => t.name === 'trader_report') && bodies[0].tools.some(t => t.name === 'trader_teach'), 'prompt has memory, tasks and all tools');
 r = await worker.fetch(mem('GET'), senv); j = await r.json(); ok(j.memory.length === 2, 'memory persisted from chat');
 apiCalls = 0; r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'забудь про звіти' }] }), senv); j = await r.json();
 ok(apiCalls === 1 && j.reply.includes('Забув') && j.notes[0].type === 'forget', 'forget without text gets a reply, no second call');
@@ -241,3 +241,59 @@ r = await worker.fetch(trq('GET'), fenv); j = await r.json(); ok(j.fund && j.fun
   ok(su.factors.some(f => f.includes('FOREX.com') && f.includes('97.60')), 'entry also shown in FOREX.com prices');
 }
 async function saveFundForTest(db) { await T.saveFund(db, { at: Date.now(), bias: 0, summary: 's', drivers: [], risks: [], events: [{ t: Date.now() + 36e5, title: 'CPI m/m', impact: 'high' }] }); }
+// Agent team (game department): assign -> worker agent -> Controller -> owner decision -> GitHub issue
+{
+  const A = await import('../worker/agents.js');
+  const ADB = memD1(); const akv = new Map(); const ABUD = { get: async k => akv.get(k) ?? null, put: async (k, v) => { akv.set(k, v); } };
+  const aenv = { ...env, DB: ADB, BUDGET: ABUD, __apiKey: 'k' };
+  await ADB.prepare('CREATE TABLE IF NOT EXISTS state (k TEXT PRIMARY KEY, v TEXT, t INTEGER)').run();
+  await ADB.prepare('INSERT INTO state (k, v, t) VALUES (?, ?, ?)').bind('ws', JSON.stringify({ game: { concept: { name: 'Зоряна Кузня', genre: 'стратегія' } } }), 1).run();
+  let calls = [], verdict = 'rework', issues = [];
+  globalThis.fetch = async (u, o) => {
+    u = String(u); const b = JSON.parse(o.body);
+    if (u.includes('api.github.com')) { issues.push({ u, b, auth: o.headers.Authorization }); return new Response(JSON.stringify({ html_url: 'https://github.com/x/game/issues/1' }), { status: 201 }); }
+    calls.push(b);
+    const ctrl = b.system.includes('Контролер');
+    return new Response(JSON.stringify({ model: b.model, stop_reason: 'end_turn', usage: { input_tokens: 2000, output_tokens: ctrl ? 100 : 3000 },
+      content: [{ type: 'text', text: ctrl ? JSON.stringify({ verdict, score: verdict === 'rework' ? 5 : 8, notes: verdict === 'rework' ? 'Мало конкретики' : 'Добре' }) : '## Сюжет\nТекст версії ' + calls.length }] }));
+  };
+  ok((await A.assignTask(ADB, { role: 'controller', title: 'x', brief: 'y' })).error, 'controller cannot be assigned work');
+  const t1 = await A.assignTask(ADB, { role: 'scenarist', title: 'Сюжет гри', brief: 'Придумай сюжет' });
+  ok(t1.id === 1 && t1.name === 'Сценарист', 'task assigned to scenarist');
+  let s = await A.runAgents(ADB, aenv);
+  ok(s.worked === 1 && calls[0].model === 'claude-sonnet-5-5' && calls[0].messages[0].content.includes('Зоряна Кузня') && calls[0].system.includes('Сценарист'), 'agent works with game concept');
+  s = await A.runAgents(ADB, aenv);
+  ok(s.reviewed === 1 && s.verdict === 'rework' && calls[1].model === 'claude-haiku-5-5', 'Controller (Haiku) sends weak result back');
+  s = await A.runAgents(ADB, aenv);
+  ok(s.worked === 1 && calls[2].messages[0].content.includes('Мало конкретики'), 'agent reworks with Controller notes');
+  verdict = 'approve'; s = await A.runAgents(ADB, aenv);
+  let v = await A.teamView(ADB, aenv);
+  ok(s.verdict === 'ready' && v.tasks[0].status === 'ready' && v.tasks[0].score === 8, 'approved by Controller -> waits for owner');
+  ok(v.budget.spent > 0 && Number(akv.get('spend:' + new Date().toISOString().slice(0, 10))) > 0, 'agent spend counted in both budgets');
+  ok((await A.runAgents(ADB, aenv)).idle, 'idle when nothing to do (no API call)');
+  let d = await A.decideTask(ADB, aenv, { id: 1, decision: 'rework' }); ok(d.status === 400, 'owner rework needs a comment');
+  d = await A.decideTask(ADB, aenv, { id: 1, decision: 'rework', comment: 'Додай злодія' }); ok(d.status === 200, 'owner sends back');
+  await A.runAgents(ADB, aenv); await A.runAgents(ADB, aenv);
+  ok(calls.at(-2).messages[0].content.includes('Додай злодія'), 'owner feedback reaches agent');
+  d = await A.decideTask(ADB, aenv, { id: 1, decision: 'approve' }); ok(d.status === 200 && !d.data.issue && issues.length === 0, 'approved; non-programmer -> no GitHub issue');
+  await A.assignTask(ADB, { role: 'economist', title: 'Валюти', brief: 'Економіка' }); await A.runAgents(ADB, aenv);
+  ok(calls.at(-1).messages[0].content.includes('Сценарист: Сюжет гри'), 'approved docs form the game bible for next agents');
+  await A.runAgents(ADB, aenv);
+  const t3 = await A.assignTask(ADB, { role: 'programmer', title: 'Ядро гри', brief: 'Архітектура' }); await A.runAgents(ADB, aenv); await A.runAgents(ADB, aenv);
+  d = await A.decideTask(ADB, { ...aenv, GH_TOKEN: 'ghp_x', GAME_REPO: 'x/game' }, { id: t3.id, decision: 'approve' });
+  ok(d.status === 200 && d.data.issue.includes('/issues/1') && issues[0].u.includes('/repos/x/game/issues') && issues[0].b.labels[0] === 'agent' && issues[0].b.body.includes('@claude'), 'programmer spec -> GitHub issue with label agent');
+  ok((await A.decideTask(ADB, aenv, { id: t3.id, decision: 'approve' })).status === 409, 'decision is final');
+  akv.set('agents:' + new Date().toISOString().slice(0, 10), '5');
+  await A.assignTask(ADB, { role: 'designer', title: 'UI', brief: 'Екрани' });
+  const nb = calls.length; ok((await A.runAgents(ADB, aenv)).idle === 'бюджет' && calls.length === nb, 'daily agent budget stops work');
+  // routes + chat tool
+  const wenv = { ...env, DB: ADB, BUDGET: ABUD };
+  const tq = (m, body) => new Request('https://w.dev/team', { method: m, headers: { Origin: O, 'X-Access-Code': 'secret', 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+  r = await worker.fetch(new Request('https://w.dev/team', { headers: { Origin: O } }), wenv); ok(r.status === 401, 'team route protected');
+  r = await worker.fetch(tq('GET'), wenv); j = await r.json(); ok(r.status === 200 && j.roles.length === 5 && j.tasks.length === 4 && !j.roles[0].prompt, 'team view');
+  r = await worker.fetch(tq('POST', { action: 'assign', role: 'designer', title: 'Логотип', brief: 'Опис' }), wenv); ok(r.status === 200, 'assign from site');
+  globalThis.fetch = async (u, o) => { const b = JSON.parse(o.body); calls.push(b); return new Response(JSON.stringify({ model: b.model, stop_reason: 'tool_use', usage: { input_tokens: 10, output_tokens: 10 }, content: [{ type: 'text', text: 'Доручив.' }, { type: 'tool_use', id: 'a', name: 'assign_task', input: { role: 'economist', title: 'Ціни магазину', brief: 'Таблиця цін' } }] })); };
+  akv.clear();
+  r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'Нехай економіст порахує ціни' }] }), wenv); j = await r.json();
+  ok(j.notes.some(n => n.type === 'assign') && j.changed.team && calls.at(-1).system.includes('ВІДДІЛ ГРИ'), 'Vlastelin assigns task via chat');
+}

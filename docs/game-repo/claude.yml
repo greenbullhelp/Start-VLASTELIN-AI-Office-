@@ -1,0 +1,32 @@
+# Copy to .github/workflows/claude.yml in the GAME repository.
+# The Programmer agent (VLASTELIN worker) opens an issue with label "agent" and "@claude" in the body;
+# Claude Code implements the spec and opens a pull request. The owner reviews and merges it.
+# Secret needed in the game repo: CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`, uses the owner's subscription)
+name: Claude agent
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+concurrency:
+  group: claude-agent
+  cancel-in-progress: false
+jobs:
+  claude:
+    if: >-
+      (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'agent')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && github.event.comment.user.login == github.repository_owner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          label_trigger: agent
+          claude_args: --max-turns 30

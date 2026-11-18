@@ -601,3 +601,24 @@ body.eco .spanel,body.eco .sp-dim{animation:none}
 .tr-chk input{width:18px;height:18px;accent-color:var(--gold)}
 .tr-fx{font-size:13.5px;margin:8px 0 0;padding:7px 10px;background:rgba(232,183,90,.1);border-left:2px solid var(--gold)}
 .tr-fx i{font-style:normal;color:var(--muted)}
+/* Команда агентів */
+.tm-roles{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:10px 0}
+.tm-role{padding:9px 11px;border:1px solid rgba(120,200,255,.18);background:rgba(10,30,50,.35);display:flex;flex-direction:column;gap:3px}
+.tm-role span{font-size:12.5px;color:var(--muted)}.tm-role i{font-style:normal;font-size:12px;color:var(--muted)}
+.tm-role.busy{border-color:var(--gold)}.tm-role.busy i{color:var(--gold)}
+.tm-new textarea{grid-column:1/-1;resize:vertical}
+.tm-list{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.tm-task{border:1px solid rgba(120,200,255,.16);background:rgba(8,22,38,.4)}
+.tm-task summary{cursor:pointer;padding:8px 10px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.tm-task.st-ready{border-color:var(--gold)}.tm-task.st-done .tm-st{color:#5ee0a0}.tm-task.st-ready .tm-st{color:var(--gold)}
+.tm-who{color:var(--cyan,#6fd3ff);font-size:13px}.tm-st{margin-left:auto;font-size:12.5px;color:var(--muted)}
+.tm-body{padding:4px 12px 12px;border-top:1px solid rgba(120,200,255,.1)}
+.tm-rev{font-size:13.5px;padding:6px 10px;background:rgba(160,120,255,.1);border-left:2px solid #a77bff;margin:6px 0}
+.tm-dec textarea{width:100%;margin:8px 0 4px;resize:vertical}
+.tm-x{padding:2px 8px;font-size:12px;margin-left:6px}
+.md{font-size:14px;line-height:1.55;overflow-wrap:anywhere}.md h4,.md h5,.md h6{margin:12px 0 4px;color:var(--gold)}.md p{margin:5px 0}.md ul,.md ol{margin:4px 0;padding-left:20px}
+.md code{background:rgba(255,255,255,.07);padding:0 4px}.md pre{background:rgba(0,0,0,.35);padding:8px;overflow:auto;font-size:12.5px}
+.md-tw{overflow-x:auto;margin:6px 0}.md table{border-collapse:collapse;font-size:13px}.md th,.md td{border:1px solid rgba(120,200,255,.18);padding:4px 7px;text-align:left}
+.tm textarea,.tm select{background:rgba(3,8,18,.85);border:1px solid rgba(63,184,255,.4);color:var(--text);padding:8px 12px;font:inherit;font-size:15px;outline:none;color-scheme:dark;min-height:42px}
+.md h4,.md h5,.md h6{font-size:15px;letter-spacing:.02em}
+@media (max-width:900px){.tm-roles{grid-template-columns:1fr 1fr}.tm-role span{display:none}}

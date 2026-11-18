@@ -51,20 +51,25 @@ let history = store.get("vl_history", []);
 let aiOnline = false;
 const agentReady = () => /^https:\/\//.test(agent.url || "");
 
-/* ====== голос: чоловічий український, якщо пристрій його має ======
-   Браузери не повідомляють стать голосу, тому розпізнаємо за назвою. Відомі чоловічі uk-голоси: Microsoft Ostap (Edge/Windows). */
-const MALE_RE = /ostap|остап|\bmale\b|чолов|\bman\b|uk-ua-x-.*m\b/i;
-const FEMALE_RE = /lesya|леся|polina|поліна|female|жіноч|woman/i;
-const ukVoices = () => ("speechSynthesis" in window ? speechSynthesis.getVoices() : []).filter(v => /^uk/i.test(v.lang));
+/* ====== голос: найкращий доступний у цьому браузері — український або російський ======
+   Браузери не повідомляють стать голосу, тому розпізнаємо за назвою.
+   Чоловічі: Microsoft Ostap (uk), Dmitry / Pavel (ru, Edge/Windows), Yuri (ru, iPhone/Mac). Якісні («живі»): Natural / Online / Neural / Enhanced / Premium. */
+const MALE_RE = /ostap|остап|dmitr|дмитр|pavel|павел|павло|yuri|юр[ий]й|maxim|максим|ilya|илья|\bmale\b|чолов|мужск|\bman\b|-x-.*m\b/i;
+const FEMALE_RE = /lesya|леся|polina|поліна|svetlana|светлана|dariya|дарья|milena|милена|irina|ирина|katya|катя|anna|анна|google|female|жіноч|женск|woman/i;
+const GOOD_RE = /natural|online|neural|enhanced|premium|покращ|улучш/i;
+const myVoices = () => ("speechSynthesis" in window ? speechSynthesis.getVoices() : []).filter(v => /^(uk|ru)/i.test(v.lang));
+const isMaleVoice = v => !!v && MALE_RE.test(v.name) && !FEMALE_RE.test(v.name);
+const voiceScore = v => (isMaleVoice(v) ? 4 : 0) + (GOOD_RE.test(v.name) ? 3 : 0) + (/^uk/i.test(v.lang) ? 2 : 0) + (v.localService === false ? 1 : 0);
+const rankedVoices = () => myVoices().sort((a, b) => voiceScore(b) - voiceScore(a));
 function pickVoice() {
-  const list = ukVoices();
+  const list = rankedVoices();
   if (agent.voiceName) { const v = list.find(v => v.name === agent.voiceName); if (v) return v; }
-  return list.find(v => MALE_RE.test(v.name) && /natural|online|neural/i.test(v.name))
-    || list.find(v => MALE_RE.test(v.name))
-    || list.find(v => !FEMALE_RE.test(v.name))
-    || list[0] || null;
+  return list[0] || null;
 }
-const isMaleVoice = v => !!v && MALE_RE.test(v.name);
+// Російський голос читає українські літери неправильно — підказуємо йому вимову
+const forRuVoice = t => t.replace(/и/g, "ы").replace(/И/g, "Ы").replace(/і/g, "и").replace(/І/g, "И").replace(/ї/g, "йи").replace(/Ї/g, "Йи")
+  .replace(/є/g, "е").replace(/Є/g, "Е").replace(/ґ/g, "г").replace(/Ґ/g, "Г").replace(/(\S)['’ʼ](?=[яюєїЯЮЄЇ])/g, "$1ъ");
+const voiceLabel = v => `${v.name.replace(/^Microsoft\s+|\s+-\s+.*$/g, "")} · ${/^uk/i.test(v.lang) ? "укр" : "рос"}${isMaleVoice(v) ? " · чоловічий" : FEMALE_RE.test(v.name) ? " · жіночий" : ""}${GOOD_RE.test(v.name) ? " · ★ живий" : ""}`;
 let voiceWarned = false;
 // Повертає Promise, що виконується, коли Властелін договорив (потрібно для «Режиму розмови»).
 function speakOut(text) {
@@ -74,14 +79,11 @@ function speakOut(text) {
   try {
     speechSynthesis.cancel();
     const clean = String(text).replace(/\[виконано:[^\]]*\]/g, "").replace(/[•*#_`]/g, " ").replace(/https?:\/\/\S+/g, "посилання");
-    const u = new SpeechSynthesisUtterance(clean);
-    const v = pickVoice();
+    const v = pickVoice(), ru = !!v && /^ru/i.test(v.lang);
+    const u = new SpeechSynthesisUtterance(ru ? forRuVoice(clean) : clean);
     u.lang = v ? v.lang : "uk-UA"; u.rate = 1; u.pitch = 1;   // природна висота: штучне зниження жіночого голосу звучить неприродно
     if (v) u.voice = v;
-    if (!isMaleVoice(v) && !voiceWarned) {
-      voiceWarned = true;
-      toast(v ? "На цьому пристрої немає чоловічого українського голосу" : "На цьому пристрої немає українського голосу");
-    }
+    if (!v && !voiceWarned) { voiceWarned = true; toast("У цьому браузері немає українського чи російського голосу"); }
     u.onend = u.onerror = () => done();
     speechSynthesis.speak(u);
   } catch (e) { done(); }
@@ -89,11 +91,14 @@ function speakOut(text) {
 }
 function fillVoiceSelect() {
   const sel = $("setVoiceName"); if (!sel) return;
-  const list = ukVoices(), auto = pickVoice();
-  sel.innerHTML = `<option value="">Автоматично${auto ? ` (${esc(auto.name)})` : ""}</option>`
-    + list.map(v => `<option value="${esc(v.name)}"${v.name === agent.voiceName ? " selected" : ""}>${esc(v.name)}${isMaleVoice(v) ? " — чоловічий" : FEMALE_RE.test(v.name) ? " — жіночий" : ""}</option>`).join("");
-  $("setVoiceHint").textContent = !list.length ? "Український голос на цьому пристрої не знайдено."
-    : list.some(isMaleVoice) ? "Чоловічий український голос є." : "Чоловічого українського голосу на цьому пристрої немає (на iPhone Apple має лише жіночий).";
+  const list = rankedVoices(), best = list[0];
+  sel.innerHTML = `<option value="">Найкращий автоматично${best ? ` (${esc(voiceLabel(best))})` : ""}</option>`
+    + list.map(v => `<option value="${esc(v.name)}"${v.name === agent.voiceName ? " selected" : ""}>${esc(voiceLabel(v))}</option>`).join("");
+  const ios = /iPhone|iPad|Macintosh/.test(navigator.userAgent) && !/Edg\//.test(navigator.userAgent);
+  $("setVoiceHint").textContent = !list.length ? "У цьому браузері немає українського чи російського голосу. Найкращі голоси — у браузері Microsoft Edge."
+    : best && isMaleVoice(best) && GOOD_RE.test(best.name) ? `Обрано живий чоловічий голос: ${voiceLabel(best)}.`
+    : ios ? "На iPhone завантажте чоловічий голос: Параметри → Універсальний доступ → Усний контент → Голоси → Російська → Yuri (покращений). Потім перезапустіть Safari."
+    : "Живого чоловічого голосу тут немає. Найкращі (Ostap, Dmitry — «живі») є в браузері Microsoft Edge.";
 }
 if ("speechSynthesis" in window) speechSynthesis.addEventListener?.("voiceschanged", fillVoiceSelect);
 

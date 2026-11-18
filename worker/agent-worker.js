@@ -14,7 +14,7 @@
  *   BUDGET             — KV-простір для обліку витрат за день     (прив'язка в wrangler.toml)
  */
 
-import { runTrader, traderView, traderControl, traderReport } from './trader.js';
+import { runTrader, traderView, traderControl, traderReport, traderTeach, traderTrades, loadFund, saveFund } from './trader.js';
 
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const DEFAULT_FAST = 'claude-haiku-5-5';
@@ -254,6 +254,23 @@ const SERVER_TOOLS = [
     input_schema: { type: 'object', properties: {} }
   },
   {
+    name: 'trader_teach',
+    description: 'Тренер трейдера: записати урок керівника про його торгівлю і/або змінити налаштування «Трейдера XAU» (паперовий рахунок). Використовуй лише коли керівник навчає, описує свій підхід або просить змінити параметри. Спершу перетвори його слова на конкретні налаштування, де це можливо.',
+    input_schema: { type: 'object', properties: {
+      lesson: { type: 'string', description: 'Урок/правило керівника своїми словами, коротко (до 500 символів)' },
+      remove_lesson: { type: 'integer', description: 'Номер уроку, який треба видалити' },
+      cfg: { type: 'object', description: 'Зміни налаштувань (лише ті, що змінюються)', properties: {
+        risk: { type: 'number', description: 'ризик на угоду, % балансу (0.1–5)' }, rr: { type: 'number', description: 'базова ціль у R (зараз 3)' }, rr2: { type: 'number', description: 'скорочена ціль у R, коли на шляху опір/новини/статистика (2)' },
+        minRR: { type: 'number', description: 'якщо сильний рівень ближче за стільки R — угоду пропускаємо' }, bigLot: { type: 'number', description: 'велика угода від, унцій' },
+        imbRatio: { type: 'number', description: 'імбаланс — у скільки разів' }, stack: { type: 'integer', description: 'скільки імбалансів поспіль потрібно' }, bias: { type: 'number', description: 'поріг загального ухилу старших ТФ (0.05–0.9)' },
+        tolAtr: { type: 'number', description: 'допуск дотику рівня, частка ATR 5M' }, zoneMin: { type: 'integer', description: 'мін. рівнів у зоні опору/підтримки' }, newsLock: { type: 'number', description: 'хвилин паузи перед важливими новинами США' },
+        learnMin: { type: 'integer', description: 'скільки угод сетапу потрібно для навчання вибору 2R/3R' },
+        sPull: { type: 'boolean', description: 'сетап «відкат по тренду»' }, sZone: { type: 'boolean', description: 'сетап «розворот від зони опору/підтримки»' }, sMid: { type: 'boolean', description: 'сетап «розворот від мід-поінта»' },
+        fundFilter: { type: 'boolean', description: 'не входити проти сильного фундаменту' }
+      } }
+    } }
+  },
+  {
     name: 'propose',
     description: 'Запропонувати керівнику задачу для покращення офісу, сайту чи бізнесу. Пропозиція лише чекає рішення: керівник сам натисне «Схвалити» або «Відхилити». Пропонуй тільки корисне й конкретне, не дублюй відкриті пропозиції.',
     input_schema: { type: 'object', properties: {
@@ -282,6 +299,7 @@ function systemPrompt(ctx = {}, extra = {}) {
     'АНАЛІЗ: аналізуй на основі даних нижче (проєкти, події, технічні завдання, пам\'ять) і, коли йдеться про сайт чи розробку, github_status. Давай висновки й 1–3 конкретні наступні кроки. Не вигадуй цифр, яких немає.',
     'ПРОПОЗИЦІЇ: якщо бачиш корисне покращення або керівник просить ідеї — виклич propose (з оцінкою вартості) замість того, щоб робити самому. Не більше 3 пропозицій за раз. Скажи, що пропозиції чекають рішення в розділі «Пропозиції».',
     'КОМАНДА: у тебе є агент «Трейдер XAU» — паперова торгівля XAU/USDT за потоком ордерів (аналіз 4H→2H→1H→30M→15M→5M; вхід на 5M/15M; VWAP, Volume Profile, HVN/LVN, CVD, імбаланси футпрінта, великі угоди). Коли керівник питає про торгівлю, золото чи статистику трейдера — виклич trader_report і відповідай за фактами. Реальними грошима трейдер не торгує; не давай інвестиційних гарантій.',
+    'ТРЕНЕР ТРЕЙДЕРА: коли повідомлення починається з «[Тренер]» або керівник навчає трейдера чи описує свою торгівлю — ти Тренер. Спершу виклич trader_report. Потім перетвори слова керівника на налаштування трейдера (trader_teach cfg) там, де це можливо, і завжди запиши суть як урок (trader_teach lesson). Скажи чесно, що застосовано автоматично, а що поки лише записано (новий тип сетапу потребує доопрацювання коду — тоді запропонуй це через propose). Під час розбору угод: аналізуй сетапи, MFE, вибір 2R/3R і пропонуй конкретні зміни, але застосовуй їх лише після згоди керівника.',
     RULES,
     `Зараз: ${String(ctx.now || '').slice(0, 60)}. Місто: ${String(ctx.city || '').slice(0, 60)}.`,
     `Проєкти: ${projects.map(p => `${String(p.name).slice(0, 80)} (${p.progress | 0}%)`).join('; ') || 'немає'}.`,
@@ -326,11 +344,80 @@ function keyDiagnostics(raw) {
   return { length: s.length, startsWithSkAnt: s.trim().startsWith('sk-ant-'), containsSkAnt: s.includes('sk-ant-'), oddChars: odd };
 }
 
+/* ====== Фундаментальний огляд золота для Трейдера XAU (Claude + веб-пошук), раз на 6 год або на вимогу ====== */
+const FUND_EVERY = 6 * 36e5, FUND_RETRY = 20 * 6e4;
+// Web search: $10 per 1000 searches (+ tokens). max_uses keeps one brief at about $0.03–0.05.
+const SEARCH_USD = 0.01;
+async function fundamentalBrief(env, force = false) {
+  if (!env.DB) return { error: 'Немає сховища' };
+  const f = await loadFund(env.DB), now = Date.now();
+  if (!force && f && f.at && now - f.at < FUND_EVERY) return f;
+  if (f && f.tried && now - f.tried < FUND_RETRY) return force ? { ...f, error: 'Огляд оновлювався щойно — спробуйте за 20 хв' } : f;
+  const apiKey = cleanKey(env.ANTHROPIC_API_KEY);
+  if (!apiKey) return { error: 'На сервері немає ключа Claude API' };
+  const limit = Number(env.DAILY_BUDGET_USD || 0.5), dayKey = 'spend:' + today();
+  let spent = env.BUDGET ? Number(await env.BUDGET.get(dayKey)) || 0 : 0;
+  if (spent >= limit) return { ...(f || {}), error: 'Денний бюджет вичерпано' };
+  await saveFund(env.DB, { ...(f || {}), tried: now });
+  const st = await traderView(env.DB).catch(() => null);
+  const cal = st && st.cal && st.cal.length ? st.cal.map(e => `${new Date(e.t).toISOString().slice(0, 16)} UTC ${e.title} (${e.impact === 'high' ? 'висока' : 'середня'} важливість, прогноз ${e.f || '—'}, попереднє ${e.p || '—'})`).join('; ') : 'немає даних';
+  const prompt = `Сьогодні ${new Date().toISOString().slice(0, 16)} UTC. Ціна XAU/USDT зараз ${st && st.an ? st.an.price : 'невідома'}.
+Знайди в інтернеті СВІЖІ (за останні 24–48 год) фундаментальні фактори для золота: індекс долара (DXY), дохідність US10Y і реальні ставки, очікування щодо ставки ФРС, інфляція й дані ринку праці США, геополітика, попит центробанків та ETF.
+Найближчі новини США з календаря ForexFactory: ${cal}. Якщо календар порожній — знайди календар на forexfactory.com (керівник аналізує новини саме там).
+Відповідай ЛИШЕ одним JSON-об'єктом без пояснень і без markdown:
+{"bias": число від -1 (сильно ведмежий для золота) до 1 (сильно бичачий), "summary": "2–3 речення українською, що зараз рухає золото", "drivers": ["до 5 коротких факторів українською, кожен починається з + (за зростання) або − (за падіння)"], "risks": ["до 3 подій чи ризиків найближчих днів"], "events": [{"time": "дата й час події в UTC у форматі ISO, напр. 2026-11-19T13:30:00Z", "title": "назва англійською, як на ForexFactory", "impact": "high або medium"}]}
+У "events" — до 8 подій США з ForexFactory з високою (червоною) або середньою (помаранчевою) важливістю на найближчі 48 годин.`;
+  const attempts = [
+    { model: env.MODEL_FAST || DEFAULT_FAST, tool: { type: 'web_search_20250305', name: 'web_search', max_uses: 3 } },
+    { model: env.MODEL || DEFAULT_MODEL, tool: { type: 'web_search_20260209', name: 'web_search', max_uses: 3 } }
+  ];
+  let cost = 0, text = '', used = '', lastErr = '';
+  for (const a of attempts) {
+    let messages = [{ role: 'user', content: prompt }];
+    try {
+      for (let i = 0; i < 3; i++) {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+          body: JSON.stringify({ model: a.model, max_tokens: 2048, output_config: { effort: 'low' }, tools: [a.tool], messages })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { lastErr = `${res.status} ${data?.error?.message || ''}`; break; }
+        used = data.model || a.model;
+        cost += costUsd(used, data.usage) + SEARCH_USD * (data.usage?.server_tool_use?.web_search_requests || 0);
+        const blocks = Array.isArray(data.content) ? data.content : [];
+        text += blocks.filter(b => b.type === 'text').map(b => b.text).join('\n');
+        if (data.stop_reason !== 'pause_turn') break;
+        messages = [{ role: 'user', content: prompt }, { role: 'assistant', content: blocks }];
+      }
+    } catch (e) { lastErr = String(e && e.message); }
+    if (text) break;
+  }
+  spent += cost;
+  if (env.BUDGET && cost) await env.BUDGET.put(dayKey, String(spent), { expirationTtl: 3 * 86400 });
+  const m = text.match(/\{[\s\S]*\}/);
+  let j = null; try { j = m && JSON.parse(m[0]); } catch {}
+  if (!j || !Number.isFinite(Number(j.bias))) {
+    console.error('Fundamental brief failed:', lastErr || text.slice(0, 200));
+    return { ...(f || {}), error: 'Не вдалося отримати фундаментальний огляд' + (lastErr ? `: ${lastErr.slice(0, 120)}` : '') };
+  }
+  const out = { at: now, tried: now, bias: Math.max(-1, Math.min(1, Number(j.bias))), summary: String(j.summary || '').slice(0, 600),
+    drivers: (Array.isArray(j.drivers) ? j.drivers : []).slice(0, 5).map(x => String(x).slice(0, 160)),
+    risks: (Array.isArray(j.risks) ? j.risks : []).slice(0, 3).map(x => String(x).slice(0, 160)), model: used, cost: +cost.toFixed(4),
+    events: (Array.isArray(j.events) ? j.events : []).map(e => ({ t: Date.parse(e && e.time), title: String((e && e.title) || '').slice(0, 80), impact: /high/i.test(e && e.impact) ? 'high' : 'med', f: '', p: '' }))
+      .filter(e => Number.isFinite(e.t) && e.title && e.t > now - 36e5 && e.t < now + 72 * 36e5).sort((a, b) => a.t - b.t).slice(0, 8) };
+  await saveFund(env.DB, out);
+  return out;
+}
+
 export default {
   // Трейдер XAU: один цикл щохвилини (розклад у wrangler.toml)
   async scheduled(event, env, ctx) {
     if (!env.DB) return;
-    ctx.waitUntil(runTrader(env.DB, event.scheduledTime || Date.now()).catch(e => console.error('Trader error:', e && e.message)));
+    ctx.waitUntil((async () => {
+      await runTrader(env.DB, event.scheduledTime || Date.now()).catch(e => console.error('Trader error:', e && e.message));
+      await fundamentalBrief(env).catch(e => console.error('Fundamental error:', e && e.message));
+    })());
   },
   async fetch(request, env, ctx) {
     const allowed = (env.ALLOWED_ORIGINS || 'https://greenbullhelp.github.io').split(',').map(s => s.trim()).filter(Boolean);
@@ -367,7 +454,11 @@ export default {
           return json(r.data, r.status, cors);
         }
         if (route === 'trader') {
-          if (request.method === 'GET') return json(await traderView(env.DB), 200, cors);
+          if (request.method === 'GET') {
+            if (url.searchParams.has('trades')) return json({ trades: await traderTrades(env.DB, Number(url.searchParams.get('trades')) || 200) }, 200, cors);
+            return json(await traderView(env.DB), 200, cors);
+          }
+          if (b.action === 'fund') { const f = await fundamentalBrief(env, true); return json(f.error ? { error: f.error } : { ok: true, fund: f }, f.error ? 429 : 200, cors); }
           const r = await traderControl(env.DB, b);
           return json(r, r.error ? 400 : 200, cors);
         }
@@ -434,6 +525,7 @@ export default {
       if (b.name === 'propose') { const r = await addProposal(env.DB, i); if (!r.error) { changed.proposals = true; notes.push({ type: 'propose', text: r.title, id: r.id, cost: r.cost }); } return r.error || `Пропозицію №${r.id} додано, чекає рішення керівника.`; }
       if (b.name === 'github_status') return githubStatus(env);
       if (b.name === 'trader_report') return traderReport(env.DB);
+      if (b.name === 'trader_teach') return traderTeach(env.DB, i);
       return 'Невідомий інструмент';
     }
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {

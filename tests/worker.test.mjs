@@ -102,7 +102,7 @@ globalThis.fetch = async (url, opts) => {
 };
 r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'запам’ятай: офіс у Києві' }], context: { tasks: [{ section: 'dev', title: 'Нова кнопка', status: 'new' }] } }), senv); j = await r.json();
 ok(apiCalls === 1 && j.reply === 'Запам’ятав.' && j.notes[0].type === 'remember' && j.changed.memory, 'remember: executed on server, one API call');
-ok(bodies[0].system.includes('Керівник любить дуже короткі звіти') && bodies[0].system.includes('[Розробка сайту] Нова кнопка') && bodies[0].tools.length === 8 && bodies[0].tools.some(t => t.name === 'trader_report'), 'prompt has memory, tasks and all tools');
+ok(bodies[0].system.includes('Керівник любить дуже короткі звіти') && bodies[0].system.includes('[Розробка сайту] Нова кнопка') && bodies[0].tools.length === 9 && bodies[0].tools.some(t => t.name === 'trader_report') && bodies[0].tools.some(t => t.name === 'trader_teach'), 'prompt has memory, tasks and all tools');
 r = await worker.fetch(mem('GET'), senv); j = await r.json(); ok(j.memory.length === 2, 'memory persisted from chat');
 apiCalls = 0; r = await worker.fetch(mk({ 'X-Access-Code': 'secret' }, { messages: [{ role: 'user', content: 'забудь про звіти' }] }), senv); j = await r.json();
 ok(apiCalls === 1 && j.reply.includes('Забув') && j.notes[0].type === 'forget', 'forget without text gets a reply, no second call');
@@ -141,9 +141,31 @@ const imb = T.imbalances(fp.bars[6e5], 3);
 ok(imb.buyStack >= 3 && imb.sellStack === 0, 'stacked buy imbalances found');
 ok(fp.big.length === 1 && fp.big[0].q === 25 && fp.big[0].buy, 'big trades >= bigLot recorded');
 const bar = { t: 6e5, o: 100.4, h: 102, l: 99.9, c: 101.6, v: 50, bv: 40 };
-const levels = [{ p: 100, n: 'POC 1H' }, { p: 106, n: 'VAH 1H' }];
+const levels = [{ p: 100, n: 'POC 1H', w: 2, kind: 'poc' }, { p: 106, n: 'VAH 1H', w: 2, kind: 'vah' }];
 let su = T.findSetup({ bias: .6, levels, bar, fpBar: fp.bars[6e5], big: fp.big, c15: [{ v: 10, bv: 8 }], atr5: 1, cfg, price: 101.6 });
-ok(su.dir === 1 && su.sl < 100 && su.tp === 106 && su.why.includes('POC 1H'), 'long setup at level with order-flow confirmation');
+ok(su.dir === 1 && su.setup === 'pull' && su.sl < 100 && su.rMul === 2 && Math.abs(su.tp - (101.6 + 2 * (101.6 - su.sl))) < 1e-9 && su.tgtWhy.includes('VAH 1H') && su.why.includes('POC 1H'), 'long setup; 2R chosen because VAH 1H blocks the way to 3R');
+ok(su.factors.length >= 8 && su.factors[0].startsWith('Чому ЛОНГ') && su.factors.some(f => f.startsWith('Потік ордерів')) && su.factors.some(f => f.startsWith('Фундамент')), 'entry explained with factors');
+su = T.findSetup({ bias: .6, levels: [levels[0]], bar, fpBar: fp.bars[6e5], big: fp.big, c15: [{ v: 10, bv: 8 }], atr5: 1, cfg, price: 101.6 });
+ok(su.dir === 1 && su.rMul === 3, 'free path -> 3R target');
+ok(T.chooseTarget({ dir: 1, entry: 100, sl: 99, levels: [{ p: 101.5, n: 'POC 4H', w: 3, kind: 'poc' }], zones: [], cfg }).skip, 'strong level before 2R -> skip trade');
+ok(T.chooseTarget({ dir: 1, entry: 100, sl: 99, levels: [], zones: [], cfg, learn: { n: 10, p2: .6, p3: .2 } }).rMul === 2, 'learning: history favours 2R');
+ok(T.chooseTarget({ dir: 1, entry: 100, sl: 99, levels: [], zones: [], cfg, learn: { n: 10, p2: .6, p3: .5 } }).rMul === 3, 'learning: history favours 3R');
+ok(T.chooseTarget({ dir: -1, entry: 100, sl: 101, levels: [], zones: [], cfg, news: { t: Date.now() + 36e5, title: 'CPI' } }).rMul === 2, 'upcoming news -> 2R');
+// resistance-zone reversal (short) and midpoint reversal
+const zl = [{ p: 110, n: 'VAH 1H', w: 2, kind: 'vah' }, { p: 110.3, n: 'VWAP +1σ', w: 1.5, kind: 'vwap' }, { p: 104, n: 'MID VA 1H', w: 2, kind: 'mid' }];
+const zones = T.buildZones(zl, .5);
+ok(zones.length === 1 && zones[0].count === 2 && zones[0].lo === 110, 'zone from clustered levels');
+const sfp = T.addTrades({}, [111, 110.5, 110, 109.5].flatMap((p, i) => [{ p, q: 10, buy: false, t: 9e5 + i }, { p: p + .5, q: 1, buy: true, t: 9e5 + i }]), cfg);
+const sbar = { t: 9e5, o: 109.6, h: 111, l: 109.2, c: 109.4, v: 50, bv: 10 };
+su = T.findSetup({ bias: .2, levels: zl, zones, bar: sbar, fpBar: sfp.bars[9e5], big: [], c15: [], atr5: 1, cfg, price: 109.4 });
+ok(su.dir === -1 && su.setup === 'zone' && su.factors[0].includes('зони опору') && su.factors[0].includes('VAH 1H'), 'short reversal from resistance zone explained');
+const mfp = T.addTrades({}, [104.5, 104, 103.5, 103].flatMap((p, i) => [{ p, q: 10, buy: false, t: 12e5 + i }, { p: p + .5, q: 1, buy: true, t: 12e5 + i }]), cfg);
+su = T.findSetup({ bias: -.1, levels: zl, zones: [], bar: { t: 12e5, o: 103.4, h: 104.4, l: 103, c: 103.2, v: 40, bv: 8 }, fpBar: mfp.bars[12e5], big: [], c15: [], atr5: 1, cfg, price: 103.2 });
+ok(su.dir === -1 && su.setup === 'mid' && su.why.includes('MID VA 1H'), 'short reversal from midpoint');
+su = T.findSetup({ bias: .6, levels, bar, fpBar: fp.bars[6e5], big: fp.big, c15: [], atr5: 1, cfg, price: 101.6, cal: [{ t: Date.now() + 6e5, title: 'Non-Farm Payrolls', impact: 'high' }] });
+ok(su.dir === 0 && su.why.includes('Non-Farm'), 'no entries right before high-impact news');
+su = T.findSetup({ bias: .6, levels, bar, fpBar: fp.bars[6e5], big: fp.big, c15: [], atr5: 1, cfg, price: 101.6, fund: { bias: -.8, summary: 'долар росте' } });
+ok(su.dir === 0 && su.why.includes('фундамент проти'), 'fundamental filter blocks long against strong bearish fundamentals');
 su = T.findSetup({ bias: .1, levels, bar, fpBar: fp.bars[6e5], big: fp.big, c15: [], atr5: 1, cfg, price: 101.6 });
 ok(su.dir === 0 && su.why.includes('нейтральний'), 'no trade on neutral bias');
 su = T.findSetup({ bias: .6, levels, bar: { ...bar, bv: 10 }, fpBar: null, big: [], c15: [], atr5: 1, cfg, price: 101.6 });
@@ -163,7 +185,7 @@ tst.pos = { dir: 1, qty: 1, entry: 2990, sl: 2980, tp: 2999, opened: Date.now(),
 await TDB.prepare('UPDATE trader SET v = ? WHERE k = ?').bind(JSON.stringify(tst), 'st').run();
 tst = await T.runTrader(TDB);
 const tv = await T.traderView(TDB);
-ok(!tv.pos && tv.trades.length === 1 && tv.trades[0].exitWhy === 'ціль' && tv.stats.n === 1 && tv.stats.wins === 1 && tv.bal > 10000, 'position closed at target, stats updated');
+ok(!tv.pos && tv.trades.length === 1 && tv.trades[0].exitWhy === 'ціль' && tv.trades[0].mfe >= 0 && tv.stats.n === 1 && tv.stats.wins === 1 && tv.bal > 10000, 'position closed at target, stats updated');
 const tenv = { ...env, DB: TDB };
 const trq = (method, body, h = { 'X-Access-Code': 'secret' }) => new Request('https://w.dev/trader', { method, headers: { Origin: O, 'Content-Type': 'application/json', ...h }, body: body ? JSON.stringify(body) : undefined });
 r = await worker.fetch(trq('GET', null, { 'X-Access-Code': 'bad' }), tenv); ok(r.status === 401, 'trader requires access code');
@@ -173,3 +195,49 @@ r = await worker.fetch(trq('GET'), tenv); j = await r.json(); ok(j.cfg.risk === 
 r = await worker.fetch(trq('POST', { action: 'reset' }), tenv); r = await worker.fetch(trq('GET'), tenv); j = await r.json(); ok(j.trades.length === 0 && j.bal === 10000 && j.cfg.risk === 2, 'trader reset keeps settings');
 r = await worker.fetch(trq('POST', { action: 'hack' }), tenv); ok(r.status === 400, 'unknown trader action rejected');
 ok((await T.traderReport(TDB)).includes('Трейдер XAU'), 'trader report text for Vlastelin');
+let tt = await T.traderTeach(TDB, { lesson: 'Заходжу на розворот від мід-поінта та зони опору', cfg: { sPull: false, rr: 3, stack: 2 } });
+r = await worker.fetch(trq('GET'), tenv); j = await r.json();
+ok(tt.includes('урок №1') && j.lessons.length === 1 && j.cfg.sPull === false && j.cfg.stack === 2 && j.log[0].text.startsWith('Тренер:'), 'coach saves lesson and settings, logged');
+r = await worker.fetch(trq('POST', { action: 'lesson-del', id: 1 }), tenv); r = await worker.fetch(trq('GET'), tenv); j = await r.json(); ok(j.lessons.length === 0, 'lesson deleted');
+r = await worker.fetch(new Request('https://w.dev/trader?trades=50', { headers: { Origin: O, 'X-Access-Code': 'secret' } }), tenv); j = await r.json(); ok(Array.isArray(j.trades), 'trade history route');
+// old trades table (from v1) gets new columns
+const ODB = memD1(); await ODB.prepare('CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, dir INTEGER NOT NULL, qty REAL NOT NULL, entry REAL NOT NULL, sl REAL NOT NULL, tp REAL NOT NULL, exit REAL NOT NULL, opened INTEGER NOT NULL, closed INTEGER NOT NULL, pnl REAL NOT NULL, r REAL NOT NULL, why TEXT NOT NULL, exitWhy TEXT NOT NULL)').run();
+await ODB.prepare("INSERT INTO trader (k, v) VALUES ('x','y')").run().catch(() => {});
+await T.ensureTraderSchema(ODB); const cols = (await ODB.prepare('PRAGMA table_info(trades)').all()).results.map(c => c.name);
+ok(['setup', 'factors', 'rmul', 'mfe', 'tgtWhy'].every(c => cols.includes(c)), 'trades table migrated');
+// Fundamental brief: Claude + web search, saved for the trader, budget counted
+let fundReq = null;
+globalThis.fetch = async (u, o) => {
+  if (String(u).includes('api.anthropic.com')) { fundReq = JSON.parse(o.body); return new Response(JSON.stringify({ model: 'claude-haiku-5-5', stop_reason: 'end_turn', usage: { input_tokens: 20000, output_tokens: 300, server_tool_use: { web_search_requests: 2 } },
+    content: [{ type: 'text', text: 'Ось огляд: {"bias": -0.4, "summary": "Долар зміцнюється після сильних даних.", "drivers": ["− DXY росте", "+ геополітика"], "risks": ["CPI США"]}' }] })); }
+  return new Response('{}', { status: 404 });
+};
+const fkv = new Map(); const fenv = { ...tenv, BUDGET: { get: async k => fkv.get(k) ?? null, put: async (k, v) => { fkv.set(k, v); } } };
+r = await worker.fetch(trq('POST', { action: 'fund' }), fenv); j = await r.json();
+ok(r.status === 200 && j.fund.bias === -0.4 && j.fund.drivers.length === 2 && fundReq.tools[0].type.startsWith('web_search') && fundReq.tools[0].max_uses === 3, 'fundamental brief via web search saved');
+ok([...fkv.values()].some(v => Number(v) > 0.02), 'fundamental brief cost counted in daily budget');
+r = await worker.fetch(trq('POST', { action: 'fund' }), fenv); ok(r.status === 429, 'fundamental refresh rate-limited');
+r = await worker.fetch(trq('GET'), fenv); j = await r.json(); ok(j.fund && j.fund.summary.includes('Долар'), 'fundamentals in trader view');
+// Data sources: Binance/Bybit blocked in the cloud -> OKX; spot XAUUSD (FOREX.com) basis
+{
+  const SDB = memD1(); const base = Date.now() - 300 * 3e5; const okxC = n => Array.from({ length: n }, (_, i) => { const t = base + i * 3e5; return [String(t), '3000', '3001', '2999', '3000.5', '100', '0.1', '300', '1']; });
+  globalThis.fetch = async u => {
+    u = String(u);
+    if (u.includes('binance') || u.includes('bybit')) return new Response('{}', { status: 403 });
+    if (u.includes('okx.com/api/v5/market/candles')) return new Response(JSON.stringify({ code: '0', data: okxC(+new URL(u).searchParams.get('limit')).reverse() }));
+    if (u.includes('okx.com/api/v5/market/trades')) return new Response(JSON.stringify({ code: '0', data: [{ px: '3000.5', sz: '30000', side: 'buy', ts: String(Date.now()) }] }));
+    if (u.includes('gold-api')) return new Response(JSON.stringify({ price: 2996.5, updatedAt: new Date().toISOString() }));
+    return new Response('{}', { status: 429 });
+  };
+  const s1 = await T.runTrader(SDB);
+  ok(!s1.err && s1.src === 'okx' && s1.srcErr.binance && s1.srcErr.bybit, 'blocked Binance/Bybit -> falls back to OKX');
+  ok(s1.fp.big.length === 1 && s1.fp.big[0].q === 30, 'OKX contracts converted to ounces (big trade 30 oz)');
+  ok(s1.an.spot === 2996.5 && s1.an.basis === -4, 'spot XAUUSD (FOREX.com) and basis');
+  ok(s1.calErr.includes('429'), 'ForexFactory 429 noted, retried later');
+  await saveFundForTest(SDB);
+  const v1 = await T.traderView(SDB);
+  ok(v1.cal.length === 1 && v1.calSrc.includes('Claude') && v1.srcName === 'OKX', 'calendar falls back to ForexFactory events from the Claude brief');
+  su = T.findSetup({ bias: .6, levels, bar, fpBar: fp.bars[6e5], big: fp.big, c15: [], atr5: 1, cfg, price: 101.6, basis: -4 });
+  ok(su.factors.some(f => f.includes('FOREX.com') && f.includes('97.60')), 'entry also shown in FOREX.com prices');
+}
+async function saveFundForTest(db) { await T.saveFund(db, { at: Date.now(), bias: 0, summary: 's', drivers: [], risks: [], events: [{ t: Date.now() + 36e5, title: 'CPI m/m', impact: 'high' }] }); }

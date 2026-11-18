@@ -730,9 +730,10 @@ function winsView(s) {
 }
 function renderPanel() {
   if (!VIEWS[section]) return;
-  const v = VIEWS[section];
-  if (v.tabs) { $("spBody").innerHTML = v.render(); return; }   // розділ із власними вкладками
-  $("spBody").innerHTML = tabsBar(section) + (spTab === "tasks" ? tasksView(section) : spTab === "wins" ? winsView(section) : v.render());
+  const v = VIEWS[section], body = $("spBody"), y = body.scrollTop;
+  if (v.tabs) body.innerHTML = v.render();   // розділ із власними вкладками
+  else body.innerHTML = tabsBar(section) + (spTab === "tasks" ? tasksView(section) : spTab === "wins" ? winsView(section) : v.render());
+  body.scrollTop = y;   // автооновлення не стрибає вгору
 }
 
 /* ====== «Властелін»: пропозиції (крок 4) і довготривала пам'ять (крок 2) — дані на сервері ====== */
@@ -1005,8 +1006,8 @@ function checkAlerts() {
   }
   if (hit) { saveWs(); refreshPanel("market"); }
 }
-/* --- Агент «Трейдер XAU»: паперова торгівля в хмарі (воркер, щохвилини) --- */
-const trader = { d: null, err: "", at: 0, busy: false, cfg: false };
+/* --- Агент «Трейдер XAU»: паперова торгівля в хмарі (воркер, щохвилини) + Тренер --- */
+const trader = { d: null, err: "", at: 0, busy: false, cfg: false, hist: null, histOpen: false, histF: "all", histBusy: false, fundBusy: false, open: new Set() };
 async function loadTrader(force = false) {
   if (!agentReady()) { trader.err = "Підключіть AI-агента в «Налаштуваннях» — трейдер працює на сервері."; return; }
   if (trader.busy || (!force && Date.now() - trader.at < 15e3)) return;
@@ -1014,10 +1015,64 @@ async function loadTrader(force = false) {
   try { trader.d = await brainApi("/trader"); trader.err = ""; } catch (e) { trader.err = e.message || "Немає зв'язку з сервером"; }
   finally { trader.busy = false; refreshPanel("market"); }
 }
-const TR_CFG = [["risk", "Ризик на угоду, %"], ["rr", "Ціль, R (прибуток/ризик)"], ["minRR", "Мін. R до рівня-цілі"], ["bigLot", "Велика угода від, oz"],
-  ["imbRatio", "Імбаланс, разів"], ["stack", "Стек імбалансів, рівнів"], ["tick", "Крок футпрінта, $"], ["bias", "Поріг ухилу (0–0.9)"], ["tolAtr", "Допуск до рівня, ATR"], ["fee", "Комісія, % за сторону"], ["start", "Стартовий баланс, USDT"]];
+async function loadHistory() {
+  if (trader.histBusy) return;
+  trader.histBusy = true;
+  try { trader.hist = (await brainApi("/trader?trades=300")).trades || []; } catch (e) { toast(e.message || "Не вдалося завантажити історію"); }
+  finally { trader.histBusy = false; refreshPanel("market"); }
+}
+const TR_CFG = [["risk", "Ризик на угоду, %"], ["rr", "Базова ціль, R"], ["rr2", "Скорочена ціль, R"], ["minRR", "Перешкода ближче — пропуск, R"], ["bigLot", "Велика угода від, oz"],
+  ["imbRatio", "Імбаланс, разів"], ["stack", "Стек імбалансів, рівнів"], ["zoneMin", "Рівнів у зоні, мін."], ["tick", "Крок футпрінта, $"], ["bias", "Поріг ухилу (0–0.9)"], ["tolAtr", "Допуск до рівня, ATR"],
+  ["newsLock", "Пауза перед новинами, хв"], ["learnMin", "Угод для навчання 2R/3R"], ["fee", "Комісія, % за сторону"], ["start", "Стартовий баланс, USDT"]];
+const SETUP_KEY = { pull: "sPull", zone: "sZone", mid: "sMid" }, SETUP_NAME = { pull: "Відкат по тренду", zone: "Розворот від зони", mid: "Розворот від мід-поінта" };
 const pm = (n, d = 2) => (n > 0 ? "+" : "") + (+n).toFixed(d);
 const biasTxt = b => (b === "long" ? '<span class="up">▲ лонг</span>' : b === "short" ? '<span class="dn">▼ шорт</span>' : '<span class="muted">◆ флет</span>');
+const tTime = t => new Date(t).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const fundTxt = b => (b >= .3 ? '<span class="up">бичачий для золота</span>' : b <= -.3 ? '<span class="dn">ведмежий для золота</span>' : "нейтральний");
+const factorsList = f => (f && f.length ? `<ul class="tr-why">${f.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "");
+function tradeDetails(t) {
+  return `<details class="tr-trade ${t.pnl >= 0 ? "win" : "loss"}" data-id="${t.id}"${trader.open.has(String(t.id)) ? " open" : ""}><summary><span>${tTime(t.opened)}</span><b class="${t.dir > 0 ? "up" : "dn"}">${t.dir > 0 ? "ЛОНГ" : "ШОРТ"}</b>
+      <span>${esc(SETUP_NAME[t.setup] || "—")}</span><span>${money(t.entry)} → ${money(t.exit)}</span><b class="${t.pnl >= 0 ? "up" : "dn"}">${pm(t.pnl)} $ · ${pm(t.r)}R</b><span>${esc(t.exitWhy)}</span></summary>
+    <div class="tr-tbody"><p><b>${esc(t.why)}</b></p>${factorsList(t.factors)}
+      <p class="sp-note">Стоп ${money(t.sl)} · ціль ${money(t.tp)}${t.rmul ? ` (${t.rmul}R)` : ""} · обсяг ${t.qty} oz · закрито ${tTime(t.closed)} · найдальше ціна заходила на ${t.mfe === null || t.mfe === undefined ? "… (ще стежимо)" : t.mfe + "R"}${t.tgtWhy ? ` · вибір цілі: ${esc(t.tgtWhy)}` : ""}</p></div></details>`;
+}
+function historyBox(d) {
+  const all = trader.hist, f = trader.histF;
+  const F = [["all", "Усі"], ["long", "Лонги"], ["short", "Шорти"], ["win", "Прибуткові"], ["loss", "Збиткові"], ["pull", "Відкат"], ["zone", "Зона"], ["mid", "Мід-поінт"]];
+  const list = (all || []).filter(t => f === "all" || (f === "long" && t.dir > 0) || (f === "short" && t.dir < 0) || (f === "win" && t.pnl > 0) || (f === "loss" && t.pnl <= 0) || t.setup === f);
+  const sum = list.reduce((s, t) => s + t.pnl, 0), wins = list.filter(t => t.pnl > 0).length;
+  return `<section class="sp-box" id="trHist"><h3>Історія угод · ${d.total}</h3>
+    ${trader.histOpen ? `<div class="tr-filt">${F.map(([k, t]) => `<button class="${k === f ? "on" : ""}" data-act="tr-hf" data-k="${k}">${t}</button>`).join("")}</div>
+      ${all === null ? `<p class="empty">Завантаження…</p>` : list.length ? `<p class="sp-note">Показано ${list.length}: виграшних ${share(wins, list.length)}%, разом <b class="${sum >= 0 ? "up" : "dn"}">${pm(sum)} $</b>. Натисніть угоду — побачите, чому трейдер увійшов.</p>${list.map(tradeDetails).join("")}` : `<p class="empty">Угод за цим фільтром немає.</p>`}
+      <div class="sp-actions"><button class="btn-ghost" data-act="tr-hist">Згорнути</button><button class="btn-ghost" data-act="tr-hload">⟳ Оновити історію</button></div>`
+    : `${d.trades.length ? d.trades.slice(0, 5).map(tradeDetails).join("") : `<p class="empty">Угод ще немає. Трейдер входить лише тоді, коли збігаються рівень/зона, реакція свічки і підтвердження потоком ордерів.</p>`}
+      ${d.total ? `<div class="sp-actions"><button class="btn-ghost" data-act="tr-hist">Уся історія (${d.total}) і фільтри</button></div>` : ""}`}</section>`;
+}
+function coachBox(d) {
+  const st = d.setups || [], ls = d.lessons || [];
+  return `<section class="sp-box tr-coach"><h3>Тренер трейдера · навчання системи</h3>
+    <p class="sp-note">Опишіть своїми словами, як ви торгуєте або що змінити. Тренер (Властелін) перетворить це на налаштування і запише як урок. Розбір угод покаже, що працює, а що ні.</p>
+    <div class="tr-scroll"><table class="tr-tab"><thead><tr><th>Сетап</th><th>Статус</th><th>Угод</th><th>Виграшних</th><th>Сер. R</th><th>Навчання: 2R / 3R</th></tr></thead><tbody>
+      ${st.map(x => `<tr><td><b>${esc(x.name)}</b></td><td><button class="tr-tg ${x.on ? "on" : ""}" data-act="tr-setup" data-k="${x.k}">${x.on ? "увімкнено" : "вимкнено"}</button></td><td>${x.n}</td><td>${x.n ? share(x.wins, x.n) + "%" : "—"}</td><td>${x.n ? pm(x.avgR) : "—"}</td>
+        <td>${x.learnN ? `${x.p2}% / ${x.p3}% <small>(${x.learnN} угод${x.learnN < d.cfg.learnMin ? `, вчиться з ${d.cfg.learnMin}` : ""})</small>` : `<small>ще немає даних</small>`}</td></tr>`).join("")}
+    </tbody></table></div>
+    <h3 class="tr-sub">Уроки власника</h3>${ls.length ? `<ul class="tr-lessons">${ls.slice().reverse().map(l => `<li><span>№${l.id}</span>${esc(l.text)}<button class="icon-x" data-act="tr-ldel" data-i="${l.id}" aria-label="Видалити урок">×</button></li>`).join("")}</ul>` : `<p class="empty">Уроків ще немає.</p>`}
+    <div class="sp-form"><textarea id="trTeach" rows="3" maxlength="800" placeholder="Напр.: «Входжу на розворот від мід-поінта та зони опору, лише коли є стек імбалансів і великі угоди. Перед новинами не торгую»"></textarea></div>
+    <div class="sp-actions"><button class="btn-gold" data-act="tr-teach">◈ Навчити трейдера</button><button class="btn-ghost" data-act="tr-review">◈ Розбір угод від Тренера</button></div></section>`;
+}
+function fundBox(d) {
+  const f = d.fund, cal = d.cal || [];
+  const age = f && f.at ? Math.round((Date.now() - f.at) / 36e5) : null;
+  return `<div class="sp-cols">
+    <section class="sp-box"><h3>Фундаментальний аналіз</h3>${f && f.at ? `<p class="tr-bias">Фон: <b>${fundTxt(f.bias)}</b> (${pm(f.bias)})<span class="tr-meter"><i style="left:${(50 + f.bias * 50).toFixed(1)}%"></i></span></p>
+      <p>${esc(f.summary)}</p>${f.drivers && f.drivers.length ? `<ul class="tr-why">${f.drivers.map(x => `<li class="${/^\s*\+/.test(x) ? "up" : /^\s*[−-]/.test(x) ? "dn" : ""}">${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${f.risks && f.risks.length ? `<p class="sp-note">Ризики: ${f.risks.map(esc).join(" · ")}</p>` : ""}
+      <p class="sp-note">Оновлено ${age < 1 ? "щойно" : age + " год тому"} · сам оновлюється кожні 6 год · ${esc(f.model || "")}${f.cost ? ` · $${f.cost}` : ""}</p>` : `<p class="empty">${f && f.error ? esc(f.error) : "Огляд з'явиться протягом кількох хвилин (Claude шукає свіжі новини)."}</p>`}
+      <div class="sp-actions"><button class="btn-ghost" data-act="tr-fund"${trader.fundBusy ? " disabled" : ""}>${trader.fundBusy ? "Шукаю новини…" : "⟳ Оновити зараз (~$0.04)"}</button></div></section>
+    <section class="sp-box"><h3>Календар новин США · ${esc(d.calSrc || "ForexFactory")}</h3>${cal.length ? `<ul class="tr-cal">${cal.map(e => `<li class="${e.impact}"><span>${tTime(e.t)}</span><b>${esc(e.title)}</b><small>${e.impact === "high" ? "висока" : "середня"}${e.f ? ` · прогноз ${esc(e.f)}` : ""}${e.p ? ` · було ${esc(e.p)}` : ""}</small></li>`).join("")}</ul>
+      <p class="sp-note">За ${d.cfg.newsLock} хв до важливої новини і 15 хв після неї трейдер не входить; якщо новина ближче ніж за 2 год — бере ціль ${d.cfg.rr2}R.</p>` : `<p class="empty">${d.calErr ? "ForexFactory тимчасово не відповідає хмарі — новини підтягнуться з наступним фундаментальним оглядом" : "Найближчим часом важливих новин немає"}</p>`}</section>
+  </div>`;
+}
 function traderBlock() {
   loadTrader();
   const d = trader.d;
@@ -1025,37 +1080,41 @@ function traderBlock() {
   const s = d.stats, a = d.an, on = d.cfg.on, ago = d.run ? Math.max(0, Math.round((Date.now() - d.run) / 1000)) : null, live = ago !== null && ago < 180;
   const eq = (d.eq || []).map(e => e.b), line = eq.length > 1 ? sparkPath(eq, 600, 110) : "";
   const p = d.pos;
-  const head = `<p class="tr-st"><i class="tr-dot ${live && !d.err ? (on ? "ok" : "pause") : "bad"}"></i>${on ? "Торгує на <b>паперовому</b> рахунку" : "На паузі"} · ${ago === null ? "ще не запускався (до 1 хв)" : `аналіз ${ago < 90 ? ago + " с" : Math.round(ago / 60) + " хв"} тому`}${d.src ? " · " + esc(d.src) : ""}${d.err ? ` · <span class="dn">${esc(d.err)}</span>` : ""}</p>`;
+  const head = `<p class="tr-st"><i class="tr-dot ${live && !d.err ? (on ? "ok" : "pause") : "bad"}"></i>${on ? "Торгує на <b>паперовому</b> рахунку" : "На паузі"} · ${ago === null ? "ще не запускався (до 1 хв)" : `аналіз ${ago < 90 ? ago + " с" : Math.round(ago / 60) + " хв"} тому`}${d.src ? " · дані: " + esc(d.srcName || d.src) : ""}${d.err ? ` · <span class="dn">${esc(d.err)}</span>` : ""}</p>
+    ${a && a.spot ? `<p class="tr-fx">Ваш графік <b>FOREX.com XAUUSD ≈ ${money(a.spot)}</b> · біржа ${money(a.price)} · різниця ${pm(a.basis)} $ — усі ціни нижче можна перевести: <i>ціна біржі ${a.basis >= 0 ? "+" : "−"} ${Math.abs(a.basis).toFixed(2)}</i></p>` : ""}
+    <p class="sp-note">Ціль: ${d.cfg.rr}R, або ${d.cfg.rr2}R, коли на шляху сильний рівень, близько новини чи так підказує власна статистика сетапу.</p>`;
   const tiles = `<div class="sp-tiles">${tile("Баланс (паперовий)", money(d.bal) + " $", `старт ${money(d.cfg.start)} $`)}${tile("Прибуток / збиток", `<span class="${s.pnl >= 0 ? "up" : "dn"}">${pm(s.pnl)} $</span>`, pm(s.pnlPct) + "%")}${tile("Угод", s.n, `виграшних ${s.winRate}%`)}${tile("Profit factor", s.pf === null ? "∞" : s.pf, `середнє ${pm(s.avgR)}R`)}${tile("Макс. просідання", s.dd + "%", `найкраща ${pm(s.best)} · найгірша ${pm(s.worst)}`)}</div>`;
-  const pos = p ? `<section class="sp-box tr-pos ${p.dir > 0 ? "long" : "short"}"><h3>Відкрита позиція: ${p.dir > 0 ? "ЛОНГ ▲" : "ШОРТ ▼"} ${p.qty} oz</h3>
-      <p>Вхід <b>${money(p.entry)}</b> · стоп <b class="dn">${money(p.sl)}</b> · ціль <b class="up">${money(p.tp)}</b> · зараз ${a ? money(a.price) : "—"} · P/L <b class="${p.upnl >= 0 ? "up" : "dn"}">${pm(p.upnl)} $</b></p>
-      <p class="sp-note">${esc(p.why)}</p><div class="sp-actions"><button class="btn-ghost" data-act="tr-close">Закрити позицію зараз</button></div></section>` : "";
+  const pos = p ? `<section class="sp-box tr-pos ${p.dir > 0 ? "long" : "short"}"><h3>Відкрита позиція: ${p.dir > 0 ? "ЛОНГ ▲" : "ШОРТ ▼"} ${p.qty} oz · ${esc(SETUP_NAME[p.setup] || "")}</h3>
+      <p>Вхід <b>${money(p.entry)}</b> · стоп <b class="dn">${money(p.sl)}</b> · ціль <b class="up">${money(p.tp)}</b>${p.rMul ? ` (${p.rMul}R)` : ""} · зараз ${a ? money(a.price) : "—"} · P/L <b class="${(p.upnl || 0) >= 0 ? "up" : "dn"}">${pm(p.upnl || 0)} $</b></p>
+      ${a && Number.isFinite(a.basis) ? `<p class="tr-fx">На графіку FOREX.com ≈ вхід <b>${money(p.entry + a.basis)}</b> · стоп <b class="dn">${money(p.sl + a.basis)}</b> · ціль <b class="up">${money(p.tp + a.basis)}</b></p>` : ""}
+      <h3 class="tr-sub">Чому ${p.dir > 0 ? "лонг" : "шорт"}</h3>${factorsList(p.factors) || `<p class="sp-note">${esc(p.why)}</p>`}
+      <div class="sp-actions"><button class="btn-ghost" data-act="tr-close">Закрити позицію зараз</button></div></section>` : "";
   const an = a ? `<section class="sp-box"><h3>Аналіз зверху вниз · 4H → 5M</h3>
-      <p class="tr-bias">Загальний ухил старших ТФ (4H–30M): <b class="${a.bias >= d.cfg.bias ? "up" : a.bias <= -d.cfg.bias ? "dn" : ""}">${pm(a.bias)}</b> → ${a.bias >= d.cfg.bias ? "шукаємо лонги від підтримки" : a.bias <= -d.cfg.bias ? "шукаємо шорти від опору" : "нейтрально, не торгуємо"}
+      <p class="tr-bias">Загальний ухил старших ТФ (4H–30M): <b class="${a.bias >= d.cfg.bias ? "up" : a.bias <= -d.cfg.bias ? "dn" : ""}">${pm(a.bias)}</b> → ${a.bias >= d.cfg.bias ? "відкати — лише в лонг; розвороти — від сильних зон" : a.bias <= -d.cfg.bias ? "відкати — лише в шорт; розвороти — від сильних зон" : "нейтрально: лише розвороти від зон і мід-поінтів"}
         <span class="tr-meter"><i style="left:${(50 + a.bias * 50).toFixed(1)}%"></i></span></p>
       <div class="tr-scroll"><table class="tr-tab"><thead><tr><th>ТФ</th><th>Ухил</th><th>VWAP</th><th>POC</th><th>Value Area</th><th>CVD</th><th>HVN / LVN</th></tr></thead><tbody>
       ${a.tfs.map(t => `<tr${["5m", "15m"].includes(t.tf) ? ' class="main"' : ""}><td><b>${t.tf.toUpperCase()}</b></td><td>${biasTxt(t.bias)}</td><td>${money(t.vwap)}</td><td>${money(t.poc)}</td><td>${money(t.val)}–${money(t.vah)}</td>
         <td class="${t.cvd >= 0 ? "up" : "dn"}">${pm(t.cvd, 0)}${t.div ? ` <small>${t.div === "bull" ? "бич. див." : "ведм. див."}</small>` : ""}</td><td><small>${t.hvn.map(x => money(x)).join(", ") || "—"} / ${t.lvn.map(x => money(x)).join(", ") || "—"}</small></td></tr>`).join("")}
       </tbody></table></div>
-      <p class="sp-note">Ціна ${money(a.price)} · VWAP дня ${money(a.vDay)} · VWAP тижня ${money(a.vWeek)} · ATR 5M ${a.atr5}${a.est ? " · ⚠ запасне джерело: дельта наближена" : ""}. Основна торгівля — 5M і 15M (виділено).</p></section>
+      <p class="sp-note">Ціна біржі ${money(a.price)}${a.spot ? ` (FOREX.com ≈ ${money(a.spot)})` : ""} · VWAP дня ${money(a.vDay)} · VWAP тижня ${money(a.vWeek)} · ATR 5M ${a.atr5}${a.est ? " · ⚠ запасне джерело: дельта на ТФ наближена" : ""}. Основна торгівля — 5M і 15M (виділено).</p></section>
     <div class="sp-cols">
-      <section class="sp-box"><h3>Ключові рівні</h3><ul class="tr-lv">${a.levels.slice().reverse().map(l => `<li class="${Math.abs(l.p - a.price) <= a.atr5 ? "near" : ""}${l.p > a.price ? " above" : ""}"><span>${esc(l.n)}</span><b>${money(l.p)}</b></li>`).join("")}</ul></section>
+      <section class="sp-box"><h3>Зони й рівні біля ціни</h3>
+        ${(a.zones || []).length ? `<ul class="tr-zones">${a.zones.slice().reverse().map(z => `<li class="${(z.lo + z.hi) / 2 > a.price ? "res" : "sup"}"><b>${money(z.lo)}–${money(z.hi)}</b><span>${(z.lo + z.hi) / 2 > a.price ? "опір" : "підтримка"} · сила ${z.count}</span><small>${z.names.map(esc).join(" + ")}</small></li>`).join("")}</ul>` : ""}
+        <ul class="tr-lv">${a.levels.slice().reverse().map(l => `<li class="${Math.abs(l.p - a.price) <= a.atr5 ? "near" : ""}${l.p > a.price ? " above" : ""}${l.k === "mid" ? " mid" : ""}"><span>${esc(l.n)}</span><b>${money(l.p)}</b></li>`).join("")}</ul></section>
       <section class="sp-box"><h3>Ордер флов · остання 5M</h3>${a.flow ? `<p>Дельта <b class="${a.flow.d >= 0 ? "up" : "dn"}">${pm(a.flow.d, 1)}</b> oz · обсяг ${a.flow.v} oz · угод ${a.flow.n}</p>
         <p>Стек імбалансів: покупці <b class="up">${a.flow.buyStack}</b>${a.flow.buyAt ? ` (до ${money(a.flow.buyAt)})` : ""} · продавці <b class="dn">${a.flow.sellStack}</b>${a.flow.sellAt ? ` (до ${money(a.flow.sellAt)})` : ""}</p>` : `<p class="empty">Футпрінт збирається…</p>`}
         <h3 class="tr-sub">Великі угоди ≥ ${d.cfg.bigLot} oz</h3>${d.big.length ? `<ul class="tr-big">${d.big.slice(0, 8).map(b => `<li><span>${new Date(b.t).toLocaleTimeString("uk-UA")}</span><b class="${b.buy ? "up" : "dn"}">${b.buy ? "купівля" : "продаж"} ${b.q}</b><span>${money(b.p)}</span></li>`).join("")}</ul>` : `<p class="empty">Поки немає</p>`}</section>
     </div>` : "";
-  const trades = `<section class="sp-box"><h3>Угоди</h3>${d.trades.length ? `<div class="tr-scroll"><table class="tr-tab"><thead><tr><th>Час</th><th>Напрям</th><th>Вхід → вихід</th><th>Обсяг</th><th>P/L</th><th>R</th><th>Вихід</th></tr></thead><tbody>
-      ${d.trades.slice(0, 20).map(t => `<tr title="${esc(t.why)}"><td>${new Date(t.opened).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td><td>${t.dir > 0 ? '<span class="up">лонг</span>' : '<span class="dn">шорт</span>'}</td><td>${money(t.entry)} → ${money(t.exit)}</td><td>${t.qty}</td><td class="${t.pnl >= 0 ? "up" : "dn"}">${pm(t.pnl)}</td><td>${pm(t.r)}</td><td>${esc(t.exitWhy)}</td></tr>`).join("")}
-      </tbody></table></div>` : `<p class="empty">Угод ще немає. Трейдер входить лише тоді, коли збігаються ухил старших ТФ, реакція від рівня і підтвердження потоком ордерів.</p>`}
-    ${line ? `<h3 class="tr-sub">Крива балансу</h3><svg class="sp-spark" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"><path d="${line}" fill="none" stroke="#ffd88a" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>` : ""}</section>`;
-  const logB = `<section class="sp-box"><h3>Журнал рішень</h3><ul class="tr-log">${d.log.slice(0, 12).map(l => `<li><span>${new Date(l.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span>${esc(l.text)}</li>`).join("") || '<li class="empty">Порожньо</li>'}</ul></section>`;
+  const eqBox = line ? `<section class="sp-box"><h3>Крива балансу</h3><svg class="sp-spark" viewBox="0 0 600 110" preserveAspectRatio="none" aria-hidden="true"><path d="${line}" fill="none" stroke="#ffd88a" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg></section>` : "";
+  const logB = `<section class="sp-box"><h3>Журнал рішень (час UTC у тексті)</h3><ul class="tr-log">${d.log.slice(0, 12).map(l => `<li><span>${new Date(l.t).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}</span>${esc(l.text)}</li>`).join("") || '<li class="empty">Порожньо</li>'}</ul></section>`;
   const cfg = trader.cfg ? `<section class="sp-box"><h3>Налаштування стратегії</h3><div class="sp-form sp-grid">${TR_CFG.map(([k, t]) => `<label class="tr-f">${t}<input id="tr_${k}" inputmode="decimal" value="${d.cfg[k]}"></label>`).join("")}</div>
+      <label class="tr-chk"><input type="checkbox" id="tr_fundFilter"${d.cfg.fundFilter ? " checked" : ""}> Не входити проти сильного фундаменту</label>
       <div class="sp-actions"><button class="btn-gold" data-act="tr-save">Зберегти</button><button class="btn-ghost" data-act="tr-cfg">Сховати</button></div>
       <p class="sp-note">Зміни діють з наступної хвилини. Стартовий баланс застосовується після «Скинути рахунок».</p></section>` : "";
   return `<section class="sp-box tr"><h3>Агент «Трейдер XAU» · паперова торгівля</h3>${head}
       <div class="sp-actions"><button class="${on ? "btn-ghost" : "btn-gold"}" data-act="${on ? "tr-stop" : "tr-start"}">${on ? "⏸ Пауза" : "▶ Старт"}</button><button class="btn-ghost" data-act="tr-cfg">⚙ Налаштування</button><button class="btn-ghost" data-act="tr-reset">↺ Скинути рахунок</button><button class="btn-ghost" data-act="tr-reload">⟳ Оновити</button></div></section>
-    ${cfg}${tiles}${pos}${an}${trades}${logB}
-    ${askBtn("Розбір роботи трейдера від Властеліна", "Виклич trader_report і коротко розбери роботу Трейдера XAU: що зараз показує аналіз 4H→5M, чому були або не були входи, як іде статистика, що варто змінити в налаштуваннях.", "Реальних грошей трейдер не використовує.")}`;
+    ${cfg}${tiles}${pos}${historyBox(d)}${eqBox}${an}${fundBox(d)}${coachBox(d)}${logB}
+    ${askBtn("Розбір роботи трейдера від Властеліна", "Виклич trader_report і коротко розбери роботу Трейдера XAU: що зараз показує аналіз 4H→5M і фундамент, чому були або не були входи, як іде статистика сетапів і вибір 2R/3R, що варто змінити.", "Реальних грошей трейдер не використовує.")}`;
 }
 VIEWS.market = { ico: "◭", title: "РИНОК · XAU/USDT", render() {
   loadMarket();
@@ -1236,8 +1295,25 @@ const PANEL_ACTS = {
   "tr-reset"() { if (confirm("Скинути паперовий рахунок? Усі угоди й статистику буде видалено, налаштування залишаться.")) trAct({ action: "reset" }, "Рахунок скинуто"); },
   "tr-save"() {
     const cfg = {}; for (const [k] of TR_CFG) { const v = $("tr_" + k).value.replace(",", ".").trim(); if (v) cfg[k] = +v; }
+    cfg.fundFilter = $("tr_fundFilter").checked;
     trader.cfg = false; trAct({ action: "config", cfg }, "Налаштування збережено");
   },
+  "tr-setup"(_, b) { const d = trader.d; if (!d) return; const k = SETUP_KEY[b.dataset.k], on = !d.cfg[k]; d.cfg[k] = on; renderPanel(); trAct({ action: "config", cfg: { [k]: on } }, `${SETUP_NAME[b.dataset.k]}: ${on ? "увімкнено" : "вимкнено"}`); },
+  "tr-ldel"(i) { if (confirm(`Видалити урок №${i}?`)) trAct({ action: "lesson-del", id: i }, "Урок видалено"); },
+  "tr-hist"() { trader.histOpen = !trader.histOpen; if (trader.histOpen) { trader.hist = null; loadHistory(); } renderPanel(); },
+  "tr-hload"() { loadHistory(); },
+  "tr-hf"(_, b) { trader.histF = b.dataset.k; renderPanel(); },
+  async "tr-fund"() {
+    if (trader.fundBusy) return;
+    trader.fundBusy = true; renderPanel();
+    try { await brainApi("/trader", "POST", { action: "fund" }); toast("Фундаментальний огляд оновлено"); } catch (e) { toast(e.message || "Не вдалося оновити"); }
+    trader.fundBusy = false; loadTrader(true);
+  },
+  "tr-teach"() {
+    const t = $("trTeach").value.trim(); if (!t) { $("trTeach").focus(); toast("Опишіть, чого навчити трейдера"); return; }
+    $("trTeach").value = ""; openChat("[Тренер] " + t); sendChat();
+  },
+  "tr-review"() { openChat("[Тренер] Зроби розбір угод Трейдера XAU: які сетапи працюють, які ні, як спрацьовує вибір цілі 2R/3R (MFE), чи заважають новини і фундамент. Запропонуй до 3 конкретних змін налаштувань, але не застосовуй без моєї згоди."); sendChat(); },
   "p-add"() { const v = $("spPName").value.trim(); if (v) addProject(v.slice(0, 80)); else $("spPName").focus(); },
   "p-del"(i) {
     const p = projects[i]; if (!p || !confirm(`Видалити проєкт «${p.name}»?`)) return;
@@ -1361,6 +1437,8 @@ $("spBody").addEventListener("click", e => {
   const b = e.target.closest("[data-act]"); if (!b || b.type === "range") return;
   const f = PANEL_ACTS[b.dataset.act]; if (f) f(+b.dataset.i, b);
 });
+// розгорнуті угоди лишаються розгорнутими після автооновлення панелі
+$("spBody").addEventListener("toggle", e => { const d = e.target; if (d.classList && d.classList.contains("tr-trade")) trader.open[d.open ? "add" : "delete"](d.dataset.id); }, true);
 $("spBody").addEventListener("keydown", e => { const a = e.target.dataset.enter; if (e.key === "Enter" && a) PANEL_ACTS[a](); });
 $("spBody").addEventListener("input", e => {   // повзунок: оновлюємо віджет і підпис без перебудови панелі
   const el = e.target; if (el.dataset.act !== "p-prog") return;

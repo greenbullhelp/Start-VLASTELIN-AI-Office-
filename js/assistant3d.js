@@ -1,218 +1,272 @@
-// VLASTELIN — оригінальний хромовий AI-андроїд «Аргентум»
-// Детальна скульптура голови і торса, дзеркальний хром із відбиттям неба, жива анімація.
+// VLASTELIN — AI-асистент «Професор»: мальований (toon) 3D-бюст сивого вченого-генія
+// Скуйовджене біле волосся, пишні вуса, добрі очі, сірий светр. Обведення контуром, як на малюнку.
 import * as THREE from 'three';
+import { noise3 } from './noise.js';
 
 const g2 = (x, y, cx, cy, sx, sy) => Math.exp(-(((x - cx) / sx) ** 2 + ((y - cy) / sy) ** 2));
 const smooth = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
-// гаусова «гряда» вздовж відрізка (у площині XY)
-function segG(x, y, ax, ay, bx, by, w) {
-  const vx = bx - ax, vy = by - ay, t = Math.max(0, Math.min(1, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy)));
-  const dx = x - (ax + vx * t), dy = y - (ay + vy * t);
-  return Math.exp(-(dx * dx + dy * dy) / (w * w));
+
+/* ================= МАТЕРІАЛИ «МАЛЮНКА» ================= */
+function toonRamp() {
+  const d = new Uint8Array([90, 170, 235, 255]);
+  const t = new THREE.DataTexture(d, 4, 1, THREE.RedFormat);
+  t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true;
+  return t;
+}
+// контур: зворотні грані, зсунуті вздовж нормалі у просторі камери (товщина не залежить від масштабу деталі)
+function outlineMaterial(width, color = 0x2b1a12) {
+  return new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    uniforms: { uW: { value: width }, uC: { value: new THREE.Color(color) } },
+    vertexShader: `uniform float uW; void main(){ vec4 mv = modelViewMatrix*vec4(position,1.); vec3 n = normalize(normalMatrix*normal);
+      mv.xyz += n * uW * (-mv.z) * .09; gl_Position = projectionMatrix*mv; }`,
+    fragmentShader: `uniform vec3 uC; void main(){ gl_FragColor = vec4(uC,1.); }`
+  });
 }
 
-/* ================= ГОЛОВА ================= */
-// v — точка на одиничній сфері (обличчя дивиться в +Z)
-function sculpt(v) {
-  const { x, y, z } = v;
-  const f = smooth(-.05, .45, z);          // «фронтальність»
-  const ax = Math.abs(x);
-  let sx = .82, sy = 1.08, sz = .97;
-  if (y < 0) { const t = -y; sx *= 1 - .16 * t * t; sz *= 1 - .06 * t; }   // звуження до підборіддя
-  if (y > .25) { sz *= 1 + .1 * (y - .25); }                            // череп
-  if (z < -.3) sz *= 1.05;                                               // потилиця
+/* ================= ГЕОМЕТРІЯ ================= */
+// голова: м'яка «яйцеподібна» форма з щоками, підборіддям і вилицями старшої людини
+function headShape(v) {
+  const { x, y, z } = v, f = smooth(-.1, .45, z), ax = Math.abs(x);
+  let sx = .86, sy = 1.04, sz = .94;
+  if (y < 0) { const t = -y; sx *= 1 - .04 * t * t; sy *= 1 - .08 * t; }
+  if (y > .3) sz *= 1 + .08 * (y - .3);
   let d = 0;
-  // лоб і надбрівні дуги
-  d += .05 * g2(x, y, 0, .55, .45, .2) * f;
-  d += .085 * (g2(x, y, .24, .29, .2, .055) + g2(x, y, -.24, .29, .2, .055)) * f;
-  d -= .03 * g2(x, y, 0, .33, .05, .05) * f;                            // перенісся між бровами
-  // очниці, повіки, вилиці
-  d -= .075 * (g2(x, y, .27, .15, .12, .065) + g2(x, y, -.27, .15, .12, .065)) * f;
-  d += .025 * (g2(x, y, .27, .2, .11, .022) + g2(x, y, -.27, .2, .11, .022)) * f;
-  d += .015 * (g2(x, y, .28, .085, .1, .02) + g2(x, y, -.28, .085, .1, .02)) * f;
-  d += .075 * (g2(x, y, .45, -.02, .13, .1) + g2(x, y, -.45, -.02, .13, .1)) * f;
-  d -= .06 * (g2(x, y, .4, -.28, .12, .14) + g2(x, y, -.4, -.28, .12, .14)) * f;
-  // ніс: спинка, кінчик, крила, ніздрі
-  d += .2 * Math.exp(-((x / .06) ** 2)) * g2(0, y, 0, -.02, 1, .22) * f;
-  d += .07 * g2(x, y, 0, -.2, .07, .05) * f;
-  d += .055 * (g2(x, y, .09, -.215, .045, .04) + g2(x, y, -.09, -.215, .045, .04)) * f;
-  d -= .03 * (g2(x, y, .045, -.255, .025, .015) + g2(x, y, -.045, -.255, .025, .015)) * f;
-  // носогубні складки
-  d -= .03 * (segG(x, y, .13, -.22, .24, -.42, .025) + segG(x, y, -.13, -.22, -.24, -.42, .025)) * f;
-  // губи: фільтрум, верхня/нижня губа, лінія і кутики рота
-  d -= .012 * g2(x, y, 0, -.3, .025, .03) * f;
-  d += .04 * g2(x, y, 0, -.35, .15, .03) * f;
-  d -= .035 * g2(x, y, 0, -.385, .17, .011) * f;
-  d += .045 * g2(x, y, 0, -.42, .13, .035) * f;
-  d -= .02 * (g2(x, y, .17, -.385, .025, .025) + g2(x, y, -.17, -.385, .025, .025)) * f;
-  d -= .025 * g2(x, y, 0, -.5, .14, .025) * f;
-  // підборіддя і щелепа
-  d += .085 * g2(x, y, 0, -.66, .19, .1) * f;
-  d += .06 * (segG(x, y, .52, -.38, .2, -.72, .07) + segG(x, y, -.52, -.38, -.2, -.72, .07)) * smooth(-.4, .2, z);
-  d += .04 * g2(ax, y, .58, -.42, .08, .09);
-  // скроні
-  d -= .045 * g2(ax, y, .7, .22, .12, .18);
+  d += .05 * g2(x, y, 0, .5, .5, .25) * f;                                // високий лоб
+  d += .045 * (g2(x, y, .28, .27, .17, .06) + g2(x, y, -.28, .27, .17, .06)) * f;   // надбрівні дуги
+  d -= .05 * (g2(x, y, .29, .12, .12, .07) + g2(x, y, -.29, .12, .07, .07)) * f;    // очниці
+  d += .07 * (g2(ax, y, .42, -.15, .16, .16)) * f;                        // щоки
+  d += .05 * (g2(ax, y, .38, -.5, .16, .14)) * f;                         // «брилі»
+  d += .06 * g2(x, y, 0, -.72, .18, .1) * f;                              // підборіддя
+  d -= .04 * g2(ax, y, .7, .25, .14, .2);                                 // скроні
   return new THREE.Vector3(x * sx, y * sy, z * sz).addScaledVector(v, d);
 }
-
-function headGeometry(q = 1) {
-  const g = new THREE.SphereGeometry(1, Math.round(256 * q), Math.round(200 * q));
+function headGeometry(q) {
+  const g = new THREE.SphereGeometry(1, Math.round(128 * q), Math.round(96 * q));
   const p = g.attributes.position, v = new THREE.Vector3();
-  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).normalize(); const s = sculpt(v); p.setXYZ(i, s.x, s.y, s.z); }
+  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).normalize(); const s = headShape(v); p.setXYZ(i, s.x, s.y, s.z); }
   g.computeVertexNormals();
   return g;
 }
+const onHead = (x, y, z, out = 0) => { const v = new THREE.Vector3(x, y, z).normalize(); return headShape(v).addScaledVector(v, out); };
 
-function surfaceTube(dirs, offset, radius) {
-  const pts = dirs.map(d => { const v = new THREE.Vector3(...d).normalize(); return sculpt(v).addScaledVector(v, offset); });
-  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 120, radius, 8, false);
-}
-
-/* ================= ТОРС ================= */
-function bodyGeometry(q = 1) {
-  const prof = [[.001, -5.6], [2.05, -5.6], [2.12, -4.6], [2.22, -3.5], [2.25, -2.95], [2.1, -2.5], [1.6, -2.18], [1.05, -2.02], [.66, -1.88],
-    [.52, -1.6], [.49, -1.3], [.46, -1.05], [.37, -.84], [.001, -.8]].map(([r, y]) => new THREE.Vector2(r, y));
-  const g = new THREE.LatheGeometry(new THREE.SplineCurve(prof).getPoints(Math.round(140 * q)), Math.round(220 * q), Math.PI);
-  const p = g.attributes.position;
-  for (let i = 0; i < p.count; i++) {   // груди сплющені спереду-назад, шия майже кругла
-    const y = p.getY(i), k = .92 - .32 * smooth(-1.75, -2.35, y);
-    p.setZ(i, p.getZ(i) * k);
-  }
-  g.computeVertexNormals();
-  const n = g.attributes.normal.clone();
+// нерівна «хмарка» волосся
+function puffGeometry(r, seed, amp = .28) {
+  const g = new THREE.IcosahedronGeometry(r, 4), p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), ax = Math.abs(x);
-    const front = smooth(-.05, .35, z), back = smooth(.05, -.35, z);
-    let d = 0;
-    d += .07 * segG(ax, y, .38, -1.02, .1, -1.95, .085) * smooth(-.2, .2, z);  // м'язи шиї
-    d -= .06 * g2(x, y, 0, -1.98, .13, .09) * front;                           // яремна ямка
-    d += .05 * segG(ax, y, .14, -2.0, 1.35, -2.18, .065) * front;              // ключиці
-    d -= .025 * segG(ax, y, .2, -2.12, 1.25, -2.32, .06) * front;
-    d += .1 * g2(ax, y, .95, -1.95, .45, .2) * smooth(.5, -.2, z);             // трапеція
-    d += .2 * g2(ax, y, 1.95, -2.5, .38, .42);                                 // дельти
-    d -= .04 * segG(ax, y, 1.45, -2.25, 1.62, -3.0, .07) * front;              // борозна дельта/груди
-    d += .2 * g2(ax, y, .8, -2.8, .6, .38) * front;                            // грудні м'язи
-    d -= .09 * segG(ax, y, .15, -3.25, 1.35, -3.12, .08) * front;              // нижній край грудних
-    d -= .07 * Math.exp(-((x / .1) ** 2)) * g2(0, y, 0, -2.75, 1, .55) * front;  // грудина
-    d += .03 * (g2(ax, y, .38, -3.65, .22, .16) + g2(ax, y, .38, -4.05, .22, .16)) * front; // прес
-    d -= .03 * Math.exp(-((x / .06) ** 2)) * smooth(-3.3, -3.5, y) * front;
-    d += .07 * g2(ax, y, .7, -2.5, .45, .55) * back;                           // лопатки
-    p.setXYZ(i, x + n.getX(i) * d, y + n.getY(i) * d, z + n.getZ(i) * d);
+    v.fromBufferAttribute(p, i);
+    const n = v.clone().normalize();
+    const k = 1 + amp * noise3(n.x * 2.2 + seed, n.y * 2.2, n.z * 2.2) + amp * .5 * noise3(n.x * 5 + seed, n.y * 5, n.z * 5);
+    p.setXYZ(i, v.x * k, v.y * k, v.z * k);
   }
   g.computeVertexNormals();
   return g;
 }
+// звужене пасмо: трубка, радіус якої зменшується до кінчика
+function strand(points, r0, seg = 14, rad = 6) {
+  const curve = new THREE.CatmullRomCurve3(points);
+  const g = new THREE.TubeGeometry(curve, seg, r0, rad, false), p = g.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    const u = Math.floor(i / (rad + 1)) / seg, k = Math.max(.08, 1 - u * .92);
+    curve.getPointAt(u, c); v.fromBufferAttribute(p, i).sub(c).multiplyScalar(k).add(c); p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+// злиття багатьох геометрій в одну (один виклик малювання)
+function merge(list) {
+  let nv = 0, ni = 0; list.forEach(g => { nv += g.attributes.position.count; ni += g.index.count; });
+  const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), idx = new Uint32Array(ni);
+  let ov = 0, oi = 0;
+  list.forEach(g => {
+    pos.set(g.attributes.position.array, ov * 3); nor.set(g.attributes.normal.array, ov * 3);
+    const a = g.index.array; for (let i = 0; i < a.length; i++) idx[oi + i] = a[i] + ov;
+    ov += g.attributes.position.count; oi += a.length; g.dispose();
+  });
+  const m = new THREE.BufferGeometry();
+  m.setAttribute('position', new THREE.BufferAttribute(pos, 3)); m.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  m.setIndex(new THREE.BufferAttribute(idx, 1));
+  return m;
+}
+// детермінований випадковий генератор, щоб зачіска була однаковою щоразу
+function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
 
-/* ================= СЕРЕДОВИЩЕ ДЛЯ ХРОМУ ================= */
-function chromeEnvironment(renderer) {
-  const env = new THREE.Scene();
-  env.add(new THREE.Mesh(new THREE.SphereGeometry(20, 64, 32), new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    vertexShader: `varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-    fragmentShader: `varying vec3 vP;
-      float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453); }
-      float n3(vec3 p){ vec3 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
-        return mix(mix(mix(h(i),h(i+vec3(1,0,0)),f.x),mix(h(i+vec3(0,1,0)),h(i+vec3(1,1,0)),f.x),f.y),
-                   mix(mix(h(i+vec3(0,0,1)),h(i+vec3(1,0,1)),f.x),mix(h(i+vec3(0,1,1)),h(i+vec3(1,1,1)),f.x),f.y),f.z); }
-      void main(){
-        float y = vP.y;
-        vec3 sky = mix(vec3(.9,1.05,1.3), vec3(.02,.1,.42), smoothstep(.02,.45,y));
-        float c = n3(vP*4.)*.6 + n3(vP*9.)*.4;
-        sky = mix(sky, vec3(1.4,1.45,1.5), smoothstep(.6,.82,c) * smoothstep(.05,.3,y) * (1.-smoothstep(.45,.8,y)));
-        vec3 ground = mix(vec3(.005,.008,.015), vec3(.08,.1,.16), smoothstep(-.25,0.,y));
-        vec3 col = y > 0. ? sky : ground;
-        col += vec3(1.8,1.7,1.5) * pow(max(0., dot(vP, normalize(vec3(-.4,.5,.75)))), 60.) * 4.;
-        gl_FragColor = vec4(col, 1.);
-      }`
-  })));
-  const box = (color, k, pos, scale) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(k) }));
-    m.position.set(...pos); m.scale.set(...scale); env.add(m);
+// скуйовджене волосся: корені на тімені, боках і потилиці; лоб відкритий
+function hairStrands(count) {
+  const rnd = rng(7), list = [];
+  for (let i = 0; i < count; i++) {
+    let d;
+    do { d = new THREE.Vector3(rnd() * 2 - 1, rnd() * 1.4 - .25, rnd() * 2 - 1); } while (d.length() > 1 || d.length() < .3);
+    d.normalize();
+    if (d.z > .35 && d.y < .75) { i--; continue; }            // обличчя і лоб без волосся
+    if (d.y < -.15 && d.z > -.2) { i--; continue; }           // не нижче вух спереду
+    const root = headShape(d).multiplyScalar(.97);
+    const out = d.clone().add(new THREE.Vector3(0, .15 + rnd() * .2, -.1)).normalize();
+    const len = .4 + rnd() * .55 + (d.y > .6 ? .1 : 0), pts = [root.clone()];
+    let p = root.clone(), dir = out.clone();
+    for (let k = 1; k <= 4; k++) {
+      const n = new THREE.Vector3(noise3(p.x * 2 + i, p.y * 2, p.z * 2), noise3(p.y * 2, p.z * 2 + i, p.x * 2), noise3(p.z * 2, p.x * 2, p.y * 2 + i));
+      dir.addScaledVector(n, 1.4).normalize();
+      p = p.clone().addScaledVector(dir, len / 4); pts.push(p);
+    }
+    list.push(strand(pts, .05 + rnd() * .035));
+  }
+  return merge(list);
+}
+
+// торс у светрі: м'які плечі, легка сутулість
+function bodyGeometry(q) {
+  const prof = [[.001, -5.6], [2.0, -5.6], [2.06, -4.6], [2.14, -3.5], [2.16, -2.95], [2.0, -2.45], [1.55, -2.12], [1.0, -1.95], [.62, -1.8],
+    [.52, -1.5], [.001, -1.48]].map(([r, y]) => new THREE.Vector2(r, y));
+  const g = new THREE.LatheGeometry(new THREE.SplineCurve(prof).getPoints(Math.round(90 * q)), Math.round(120 * q), Math.PI);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i), x = p.getX(i), k = .9 - .3 * smooth(-1.7, -2.3, y);
+    let z = p.getZ(i) * k;
+    if (z < 0) z -= .12 * smooth(-1.7, -2.6, y) * (1 - Math.abs(x) / 2.2);   // сутулість
+    p.setZ(i, z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+// светр: V-виріз із білою сорочкою, рубчики й темна лінія по краю виробу
+function sweaterMaterial(ramp) {
+  const m = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: ramp });
+  m.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObj;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvObj = position;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vObj;')
+      .replace('vec4 diffuseColor = vec4( diffuse, opacity );', `
+        vec3 knit = vec3(.33,.34,.38), shirt = vec3(.96,.95,.92);
+        float w = .5 * clamp((vObj.y + 3.15) / 1.6, 0., 1.);           // ширина V-вирізу
+        float front = step(0., vObj.z);
+        float v = front * step(abs(vObj.x), w) * step(-3.15, vObj.y);
+        float edge = front * (1. - smoothstep(.0, .05, abs(abs(vObj.x) - w))) * step(-3.15, vObj.y);
+        float rib = .03 * sin(vObj.x * 60.) * (1. - v);
+        vec3 col = mix(knit + rib, shirt, v);
+        col = mix(col, vec3(.17,.11,.08), edge * .9);
+        float placket = front * (1. - smoothstep(.0, .025, abs(vObj.x))) * step(vObj.y, -3.2);  // планка кардигана
+        col = mix(col, vec3(.25,.25,.29), placket);
+        vec4 diffuseColor = vec4( col, opacity );`);
   };
-  box(0x2a9dff, 5, [-9, 1, -4], [1, 9, 7]);
-  box(0xffb347, 3.5, [9, 2, -3], [1, 7, 5]);
-  box(0xffffff, 2.5, [0, 9, 4], [10, .5, 6]);
-  return new THREE.PMREMGenerator(renderer).fromScene(env, .015).texture;
+  return m;
 }
 
 function glowSprite(rgb) {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d'), grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grd.addColorStop(0, `rgba(${rgb},1)`); grd.addColorStop(.25, `rgba(${rgb},.45)`); grd.addColorStop(1, `rgba(${rgb},0)`);
+  grd.addColorStop(0, `rgba(${rgb},1)`); grd.addColorStop(.35, `rgba(${rgb},.4)`); grd.addColorStop(1, `rgba(${rgb},0)`);
   g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  return new THREE.Sprite(new THREE.SpriteMaterial({ map: t, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, transparent: true }));
+  return new THREE.Sprite(new THREE.SpriteMaterial({ map: t, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
 }
 
 export function initAssistant(canvas, { lite = false } = {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-  const maxDpr = lite ? 1.5 : 2, Q = lite ? .6 : 1;   // на слабких пристроях — менше пікселів і полігонів
+  const maxDpr = lite ? 1.5 : 2, Q = lite ? .6 : 1;
   renderer.setPixelRatio(Math.min(devicePixelRatio, maxDpr));
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
-  scene.environment = chromeEnvironment(renderer);
   const camera = new THREE.PerspectiveCamera(24, 1, .1, 60);
+  const ramp = toonRamp();
+  const toon = color => new THREE.MeshToonMaterial({ color, gradientMap: ramp });
+  const skin = toon(0xf2c29f), hairM = toon(0xf6f4ef), browM = toon(0xe2ded6), whiteM = toon(0xfbfaf6);
+  const irisM = new THREE.MeshBasicMaterial({ color: 0x5b3b22 }), pupilM = new THREE.MeshBasicMaterial({ color: 0x120a06 });
+  const mouthM = new THREE.MeshBasicMaterial({ color: 0x4a1d18 });
+  const lineThick = outlineMaterial(.05), lineThin = outlineMaterial(.03);
+  const ink = (mesh, mat = lineThick) => { mesh.add(new THREE.Mesh(mesh.geometry, mat)); return mesh; };
+  const blob = (mat, s, pos, rot = [0, 0, 0], seg = 24) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1, seg, Math.round(seg * .75)), mat);
+    m.scale.set(...s); m.position.set(...pos); m.rotation.set(...rot); return m;
+  };
 
-  const chrome = new THREE.MeshPhysicalMaterial({ color: 0xe6edf5, metalness: 1, roughness: .06, clearcoat: 1, clearcoatRoughness: .04, envMapIntensity: 1.0 });
-  const darkSeam = new THREE.MeshStandardMaterial({ color: 0x0a111c, metalness: .8, roughness: .35 });
-  const glowCyan = new THREE.MeshBasicMaterial({ color: 0x9fe8ff });
-  const glowGold = new THREE.MeshBasicMaterial({ color: 0xffc870 });
+  // ореол-статус за головою (блакитний — звичайний, золотий — слухає, фіолетовий — думає)
+  const halo = glowSprite('110,200,255'); halo.scale.set(5.4, 5.4, 1); halo.position.set(0, -.15, -2.2); scene.add(halo);
 
   const bust = new THREE.Group(); scene.add(bust);
-  const body = new THREE.Mesh(bodyGeometry(Q), chrome); bust.add(body);
-  const head = new THREE.Group(); head.position.y = -.02; head.scale.setScalar(1.1); bust.add(head);
-  head.add(new THREE.Mesh(headGeometry(Q), chrome));
+  const body = ink(new THREE.Mesh(bodyGeometry(Q), sweaterMaterial(ramp))); bust.add(body);
+  const neck = ink(new THREE.Mesh(new THREE.CylinderGeometry(.46, .52, 1, 32), skin)); neck.position.y = -1.0; bust.add(neck);
+  const collar = ink(new THREE.Mesh(new THREE.TorusGeometry(.5, .08, 10, 48), whiteM), lineThin);
+  collar.rotation.x = Math.PI / 2 - .25; collar.position.set(0, -1.5, .06); collar.scale.set(1, 1.05, .7); bust.add(collar);
+  [-3.45, -3.95, -4.45].forEach(y => bust.add(ink(blob(toon(0x3b3530), [.06, .06, .03], [0, y, 1.0]), lineThin)));   // ґудзики
 
-  // Очі — мигдалеподібні лінзи з сяйвом
+  const head = new THREE.Group(); head.position.y = -.28; head.scale.setScalar(1.08); bust.add(head);
+  head.add(ink(new THREE.Mesh(headGeometry(Q), skin)));
+
+  // вуха
+  [-1, 1].forEach(s => {
+    const ear = ink(blob(skin, [.11, .24, .14], [.86 * s, .02, -.02], [0, 0, -.12 * s]));
+    head.add(ear);
+  });
+  // ніс — великий, з «картоплинкою» на кінчику
+  head.add(ink(blob(skin, [.1, .24, .13], onHead(0, -.04, 1, -.06).toArray(), [-.3, 0, 0])));
+  head.add(ink(blob(skin, [.15, .12, .13], onHead(0, -.22, 1, .07).toArray())));
+  [-1, 1].forEach(s => head.add(ink(blob(skin, [.08, .08, .08], onHead(.11 * s, -.26, 1, 0).toArray()), lineThin)));
+
+  // очі: білки, райдужка, зіниця, відблиск; повіки опускаються при кліпанні
   const eyes = [];
   [-1, 1].forEach(s => {
-    const dir = new THREE.Vector3(.27 * s, .15, .95).normalize(), p = sculpt(dir);
-    const lens = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.MeshBasicMaterial({ color: 0xc8f4ff }));
-    lens.scale.set(.1, .032, .04); lens.position.copy(p).addScaledVector(dir, -.012); lens.rotation.z = s * -.1;
-    const glow = glowSprite('110,210,255'); glow.scale.set(.6, .28, 1); glow.position.copy(p).addScaledVector(dir, .05);
-    head.add(lens, glow); eyes.push({ lens, glow });
+    const c = onHead(.29 * s, .12, .9, -.06);
+    const ball = new THREE.Group(); ball.position.copy(c); head.add(ball);
+    ball.add(ink(blob(whiteM, [.15, .15, .12], [0, 0, 0]), lineThin));
+    const iris = new THREE.Group(); ball.add(iris);
+    iris.add(blob(irisM, [.085, .085, .03], [0, -.005, .115]));
+    iris.add(blob(pupilM, [.042, .042, .02], [0, -.005, .135]));
+    iris.add(blob(new THREE.MeshBasicMaterial({ color: 0xffffff }), [.02, .02, .01], [-.026, .024, .15]));
+    const lid = ink(new THREE.Mesh(new THREE.SphereGeometry(.17, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), skin), lineThin);
+    ball.add(lid);
+    const lower = ink(new THREE.Mesh(new THREE.SphereGeometry(.162, 24, 8, 0, Math.PI * 2, Math.PI * .72, Math.PI * .28), skin), lineThin);
+    lower.rotation.x = -.5; ball.add(lower);                   // мішечки під очима
+    eyes.push({ iris, lid, s });
   });
-
-  // Риси андроїда: сяючі лінії на скронях, «аудіо-вузли», шов на черепі
+  // кущисті брови
+  const brows = [];
   [-1, 1].forEach(s => {
-    head.add(new THREE.Mesh(surfaceTube([[.55 * s, .34, .75], [.8 * s, .22, .35], [.93 * s, .05, -.05], [.82 * s, -.25, -.4], [.6 * s, -.55, -.55]], .003, .008), glowCyan));
-    head.add(new THREE.Mesh(surfaceTube([[.68 * s, .5, .45], [.85 * s, .42, .05], [.76 * s, .52, -.4]], .003, .005), glowCyan));
-    const dir = new THREE.Vector3(s, .03, -.06).normalize(), p = sculpt(dir);
-    const node = new THREE.Group(); node.position.copy(p); node.lookAt(p.clone().add(dir));
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(.14, .17, .06, 48), chrome); disc.rotation.x = Math.PI / 2; node.add(disc);
-    const r1 = new THREE.Mesh(new THREE.TorusGeometry(.11, .011, 8, 64), glowCyan); r1.position.z = .035; node.add(r1);
-    const r2 = new THREE.Mesh(new THREE.TorusGeometry(.065, .006, 8, 48), glowGold); r2.position.z = .036; node.add(r2);
-    head.add(node);
+    const g = new THREE.Group(); g.position.copy(onHead(.3 * s, .3, .9, .02)); head.add(g);
+    for (let k = 0; k < 6; k++) {
+      const u = k / 5;
+      g.add(ink(blob(browM, [.075, .035, .04], [(-.13 + u * .26) * s, .02 * Math.sin(u * Math.PI) - u * .05, 0], [0, 0, (.5 - u) * .5 * s + (u - .5) * .3]), lineThin));
+    }
+    brows.push({ g, y0: g.position.y });
   });
-  head.add(new THREE.Mesh(surfaceTube([[0, .62, .78], [0, .97, .25], [0, .88, -.45], [0, .4, -.9]], .002, .005), darkSeam));
-
-  // Шийні сегменти і ядро на грудях
-  [-1.3, -1.55].forEach((y, i) => {
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(.5 + i * .02, .007, 8, 96), i ? glowCyan : darkSeam);
-    ring.rotation.x = Math.PI / 2; ring.position.y = y; ring.scale.y = .92; bust.add(ring);
+  // зморшки на лобі
+  [.5, .58, .66].forEach((y, i) => {
+    const pts = [-.32, -.16, 0, .16, .32].map(x => onHead(x, y + .02 * Math.cos(x * 8 + i), .85, .004));
+    head.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 30, .007, 5), new THREE.MeshBasicMaterial({ color: 0xa7724f })));
   });
-  const core = new THREE.Group(); core.position.set(0, -2.62, .86); core.rotation.x = -.18; bust.add(core);
-  core.add(new THREE.Mesh(new THREE.CircleGeometry(.11, 6), glowGold));
-  core.add(new THREE.Mesh(new THREE.TorusGeometry(.19, .014, 6, 6), glowCyan));
-  const coreGlow = glowSprite('255,200,110'); coreGlow.scale.set(.7, .7, 1); core.add(coreGlow);
 
-  // Світло
-  scene.add(new THREE.AmbientLight(0x6688aa, .15));
-  const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(-3, 4, 5); scene.add(key);
-  const rimB = new THREE.PointLight(0x3fb8ff, 55, 14, 2); rimB.position.set(-3.2, 1, -2.5); scene.add(rimB);
-  const rimG = new THREE.PointLight(0xffb347, 26, 14, 2); rimG.position.set(3.2, .3, -2); scene.add(rimG);
+  // рот і пишні вуса
+  const mouth = blob(mouthM, [.15, .03, .05], onHead(0, -.5, .86, -.01).toArray()); head.add(mouth);
+  head.add(ink(blob(skin, [.15, .05, .07], onHead(0, -.58, .84, -.02).toArray()), lineThin));     // нижня губа
+  const stache = new THREE.Group(); stache.position.copy(onHead(0, -.36, 1, -.02)); head.add(stache);
+  const stacheY = stache.position.y;
+  stache.add(ink(blob(hairM, [.3, .1, .1], [0, 0, 0])));
+  for (let k = 0; k < 12; k++) {
+    const u = k / 11 - .5, s = Math.sign(u) || 1;
+    stache.add(ink(blob(hairM, [.06, .15, .06], [u * .62, -.07 - Math.abs(u) * .12, -Math.abs(u) * .12], [0, 0, u * 1.1 + s * .05]), lineThin));
+  }
 
-  // Кадрування: бюст у панелі або великий план у збільшеному режимі
+  // знамените скуйовджене волосся: «хмари» + розкуйовджені пасма
+  const hair = new THREE.Group(); head.add(hair);
+  [[[-.98, .3, -.3], .58, 1], [[.98, .3, -.3], .58, 2], [[-.72, .72, -.2], .5, 3], [[.72, .72, -.2], .5, 4], [[0, .88, -.4], .62, 5],
+   [[0, .35, -.8], .65, 6], [[-.8, -.15, -.45], .45, 7], [[.8, -.15, -.45], .45, 8], [[-.3, .98, .1], .34, 9], [[.3, .98, .1], .34, 10], [[-1.18, -.05, -.1], .36, 11], [[1.18, -.05, -.1], .36, 12]]
+    .forEach(([pos, r, seed]) => { const m = ink(new THREE.Mesh(puffGeometry(r, seed), hairM)); m.position.set(...pos); hair.add(m); });
+  const strands = ink(new THREE.Mesh(hairStrands(lite ? 45 : 90), hairM), lineThin); hair.add(strands);
+
+  // світло: тепле ключове, м'яке заповнення, кольоровий контур від HUD
+  scene.add(new THREE.AmbientLight(0xffffff, .8));
+  scene.add(new THREE.HemisphereLight(0xdfeaff, 0x553322, .6));
+  const key = new THREE.DirectionalLight(0xfff1e0, 2.4); key.position.set(-3, 4, 6); scene.add(key);
+  const rim = new THREE.DirectionalLight(0x7cc8ff, .9); rim.position.set(4, 2, -3); scene.add(rim);
+
   let big = false;
   function frame() {
     const r = canvas.getBoundingClientRect(); if (!r.width) return;
     renderer.setSize(r.width, r.height, false);
     camera.aspect = r.width / r.height;
-    if (big) { camera.position.set(0, -.6, 13.5); camera.lookAt(0, -1.15, 0); }
-    else { camera.position.set(0, -.55, 11.2); camera.lookAt(0, -.85, 0); }
+    if (big) { camera.position.set(0, -.7, 14); camera.lookAt(0, -1.15, 0); }
+    else { camera.position.set(0, -.6, 12); camera.lookAt(0, -.8, 0); }
     camera.updateProjectionMatrix();
   }
   new ResizeObserver(frame).observe(canvas); frame();
@@ -222,8 +276,7 @@ export function initAssistant(canvas, { lite = false } = {}) {
 
   let speaking = 0, listening = false, thinking = false, eco = false, nextBlink = 2, blink = 0;
   const clock = new THREE.Clock();
-  const cCyan = new THREE.Color(0xc8f4ff), cGold = new THREE.Color(0xffd27a), cThink = new THREE.Color(0xd9b8ff);
-  // цикл зупиняється, коли вкладка прихована, аватар поза екраном або його закриває панель розділу
+  const cCyan = new THREE.Color(0x6ec8ff), cGold = new THREE.Color(0xffc45a), cThink = new THREE.Color(0xc59bff);
   let paused = false, onScreen = true, raf = 0, last = 0;
   const minFrame = lite ? 1000 / 31 : 0;
   const active = () => !paused && onScreen && !document.hidden;
@@ -238,24 +291,30 @@ export function initAssistant(canvas, { lite = false } = {}) {
     last = now;
     const dt = Math.min(clock.getDelta(), .05), t = clock.elapsedTime, sp = eco ? .4 : 1;
     ptr.sx += (ptr.x - ptr.sx) * .05; ptr.sy += (ptr.y - ptr.sy) * .05;
-    head.rotation.y = Math.sin(t * .33 * sp) * .2 + ptr.sx * .4 + (thinking ? Math.sin(t * 1.5) * .08 : 0);
-    head.rotation.x = Math.sin(t * .25 * sp) * .04 + ptr.sy * .14 - (thinking ? .08 : .02);
-    bust.rotation.y = head.rotation.y * .22;
+    head.rotation.y = Math.sin(t * .33 * sp) * .15 + ptr.sx * .3 + (thinking ? Math.sin(t * 1.2) * .06 : 0);
+    head.rotation.x = Math.sin(t * .25 * sp) * .03 + ptr.sy * .1 - (thinking ? .1 : 0);
+    head.rotation.z = Math.sin(t * .2 * sp) * .03 + (thinking ? .08 : 0);
+    bust.rotation.y = head.rotation.y * .2;
     const breath = Math.sin(t * 1.1 * sp);
     body.scale.set(1 + breath * .006, 1, 1 + breath * .012); bust.position.y = breath * .02;
-    nextBlink -= dt; if (nextBlink < 0) { blink = 1; nextBlink = 2.5 + Math.random() * 4; }
-    blink = Math.max(0, blink - dt * 7);
-    speaking = Math.max(0, speaking - dt * .5);
-    const talk = speaking > 0 ? Math.abs(Math.sin(t * 13)) * .5 : 0;
-    const pulse = listening ? .75 + .25 * Math.sin(t * 9) : thinking ? .6 + .4 * Math.sin(t * 4) : .82 + .12 * Math.sin(t * 2) + talk;
-    const col = listening ? cGold : thinking ? cThink : cCyan;
-    eyes.forEach(({ lens, glow }) => {
-      lens.scale.y = .032 * (1 - blink * .9);
-      lens.material.color.copy(col);
-      glow.material.color.copy(col); glow.material.opacity = Math.min(1, pulse) * (1 - blink * .8);
+    // волосся ледь «живе»
+    hair.rotation.z = Math.sin(t * .9 * sp) * .012; hair.scale.setScalar(1 + Math.sin(t * .7 * sp) * .006);
+    // очі стежать за курсором; при роздумах — дивляться вгору
+    eyes.forEach(({ iris }) => {
+      iris.rotation.y = ptr.sx * .35; iris.rotation.x = thinking ? -.45 : ptr.sy * .3;
     });
-    coreGlow.material.opacity = .55 + .3 * Math.sin(t * 2) + talk;
-    core.rotation.z += dt * (thinking ? 2 : .3);
+    nextBlink -= dt; if (nextBlink < 0) { blink = 1; nextBlink = 2.5 + Math.random() * 4; }
+    blink = Math.max(0, blink - dt * 6);
+    const lidOpen = listening ? -.7 : -.4;                      // слухає — очі ширше
+    eyes.forEach(({ lid }) => { lid.rotation.x = lidOpen + (.95 - lidOpen) * Math.min(1, blink * 1.6); });
+    const browUp = listening ? .05 : thinking ? .03 * Math.sin(t * 3) + .02 : 0;
+    brows.forEach((b, i) => { b.g.position.y = b.y0 + browUp + (thinking && i ? .03 : 0); });
+    speaking = Math.max(0, speaking - dt * .5);
+    const talk = speaking > 0 ? Math.abs(Math.sin(t * 11)) * (.6 + .4 * Math.sin(t * 3.7)) : 0;
+    mouth.scale.y = .03 + talk * .07; stache.position.y = stacheY + talk * .02;
+    const col = listening ? cGold : thinking ? cThink : cCyan;
+    halo.material.color.lerp(col, .08);
+    halo.material.opacity = (listening ? .75 + .2 * Math.sin(t * 8) : thinking ? .6 + .3 * Math.sin(t * 4) : .45 + .08 * Math.sin(t * 2)) + talk * .2;
     renderer.render(scene, camera);
   }
   wake();

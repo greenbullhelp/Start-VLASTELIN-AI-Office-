@@ -420,9 +420,10 @@ body.eco .spanel,body.eco .sp-dim{animation:none}
 }
 @media (prefers-reduced-motion:reduce){.spin,.wave i,.bars i{animation:none}}
 
-/* ===== Чат з Властеліном: подовжене вікно ===== */
-.chatwin{position:fixed;z-index:42;right:14px;top:14px;bottom:14px;width:min(460px,calc(100vw - 28px));--c:20px;
-  display:flex;flex-direction:column;padding:14px 16px 12px;animation:spIn .25s ease-out}
+/* ===== Чат з Властеліном: панель, що виїжджає знизу ===== */
+.chatwin{position:fixed;z-index:42;left:50%;bottom:10px;transform:translateX(-50%);width:min(860px,calc(100vw - 28px));height:min(64vh,680px);--c:20px;
+  display:flex;flex-direction:column;padding:14px 16px 12px;animation:chatUp .28s ease-out}
+@keyframes chatUp{from{transform:translate(-50%,40px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
 .chatwin[hidden]{display:none}
 .chat-head{flex:none}
 .chat-head .icon-btn{width:36px;height:36px;font-size:22px}
@@ -459,7 +460,8 @@ body.eco .spanel,body.eco .sp-dim{animation:none}
 .chat-deep small{font-size:11px}
 .chat-clear{background:none;border:none;color:var(--muted);font-size:13px;text-decoration:underline;padding:6px 0}
 @media (max-width:900px){
-  .chatwin{left:8px;right:8px;width:auto;top:calc(8px + env(safe-area-inset-top));bottom:calc(8px + env(safe-area-inset-bottom));padding:12px 12px 10px;--c:16px}
+  .chatwin{left:0;right:0;transform:none;width:auto;bottom:0;height:min(78vh,78dvh);padding:12px 12px calc(10px + env(safe-area-inset-bottom));--c:16px;animation:chatUpM .28s ease-out}
+  @keyframes chatUpM{from{transform:translateY(60px);opacity:0}to{transform:none;opacity:1}}
 }
 .modal label select{display:block;width:100%;margin-top:6px;background:rgba(3,8,18,.9);border:1px solid rgba(63,184,255,.4);color:var(--text);padding:10px 12px;font-size:14px;outline:none;color-scheme:dark}
 .voice-hint{display:block;margin-top:6px;font-size:12px;color:var(--muted);line-height:1.4}
@@ -468,7 +470,7 @@ body.eco .spanel,body.eco .sp-dim{animation:none}
 .chat-btn.mic-btn.live{border-color:var(--gold);color:var(--gold-2);box-shadow:0 0 18px rgba(232,183,90,.7);animation:micPulse 1.1s ease-in-out infinite}
 @keyframes micPulse{50%{box-shadow:0 0 4px rgba(232,183,90,.3)}}
 .chatwin.listening .chat-input textarea{border-color:var(--gold)}
-@media (prefers-reduced-motion:reduce){.chat-btn.mic-btn.live{animation:none}}
+@media (prefers-reduced-motion:reduce){.chat-btn.mic-btn.live,.chatwin{animation:none}}
 
 /* ===== «Властелін»: пропозиції і пам'ять ===== */
 .menu button code.hot{color:var(--gold-2);opacity:1;font-weight:700}

@@ -134,6 +134,12 @@ say "8/9 Hermes Agent і запуск"
 mkdir -p data/hermes/workspace data/panel
 [ -f data/hermes/config.yaml ] || cp hermes/config.yaml data/hermes/config.yaml
 [ -f data/hermes/SOUL.md ] || cp hermes/SOUL.md data/hermes/SOUL.md
+if [ ! -d data/hermes/workspace/game/.git ]; then   # стартовий прототип гри для ігрового агента
+  mkdir -p data/hermes/workspace/game && cp -rn game-starter/. data/hermes/workspace/game/
+  git -C data/hermes/workspace/game init -q -b main
+  git -C data/hermes/workspace/game add -A
+  git -C data/hermes/workspace/game -c user.name=Jarvis -c user.email=jarvis@localhost commit -qm "Starter card game prototype" || true
+fi
 chown -R 10000:10000 data
 docker compose pull hermes caddy
 docker compose up -d --build

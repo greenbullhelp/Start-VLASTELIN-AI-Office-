@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Властелін — карткова гра (прототип)</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<header><b>ВЛАСТЕЛІН</b><a id="donate" class="donate" target="_blank" rel="noopener" hidden>♥ Підтримати гру</a></header>
+<main>
+  <div id="foeHero" class="hero"></div>
+  <section id="foeBoard" class="board"></section>
+  <section id="myBoard" class="board mine"></section>
+  <div id="meHero" class="hero me"></div>
+  <section id="hand" class="hand"></section>
+  <div class="bar"><div id="log" class="log"></div><button id="endTurn">Кінець ходу</button></div>
+</main>
+<!-- Банерна реклама: лише в меню й на екрані результатів, ніколи під час бою -->
+<div id="result" class="result" hidden>
+  <h2 id="resultText"></h2>
+  <div class="ad-slot" data-slot="results">Рекламний банер 320×100</div>
+  <button id="again">Ще партія</button>
+</div>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

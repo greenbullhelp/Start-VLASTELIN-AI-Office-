@@ -9,7 +9,7 @@ import pytest
 _tmp = tempfile.mkdtemp(prefix="jarvis-test-")
 os.environ.update({"DATA_DIR": _tmp, "BRAIN": "mock", "COOKIE_SECURE": "0", "STT_PROVIDER": "none",
                    "NODE_TOKEN": "test-node-token-123", "DAILY_BUDGET_USD": "5", "TZ": "Europe/Kyiv",
-                   "MAX_PARALLEL_AGENTS": "3"})
+                   "MAX_PARALLEL_AGENTS": "3", "MARKET_FEED": "0"})
 for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_OWNER_ID", "STABILITY_API_KEY"):
     os.environ.pop(k, None)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

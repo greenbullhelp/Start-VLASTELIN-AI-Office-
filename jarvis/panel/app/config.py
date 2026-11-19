@@ -73,6 +73,7 @@ class Settings:
     stt: str = field(default_factory=lambda: _env("STT_PROVIDER", "local"))
     stt_model: str = field(default_factory=lambda: _env("STT_MODEL", "base"))
 
+    market_feed: bool = field(default_factory=lambda: _env("MARKET_FEED", "1") != "0")
     report_hour: int = field(default_factory=lambda: _int("REPORT_HOUR", 21))
     cookie_secure: bool = field(default_factory=lambda: _env("COOKIE_SECURE", "1") != "0")
     session_days: int = field(default_factory=lambda: _int("SESSION_DAYS", 14))

@@ -195,7 +195,10 @@ class Orchestrator:
             lines.append("ПК-вузол: " + ("онлайн" if node_hub.online() else "офлайн (задачі для ПК чекатимуть у черзі)"))
         except ImportError:
             pass
-        if t["agent"] == "trading":
+        if t["agent"] in ("trading", "research"):
+            from . import market
+
+            lines.append(market.brief())
             try:
                 from . import trading
 

@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     bg = state["bg"]
     bg.append(asyncio.create_task(reports.scheduler(int(db.get_setting("report_hour", settings.report_hour)))))
     bg.append(asyncio.create_task(telegram.run(orch)))
-    for mod in ("trading", "node_hub"):
+    for mod in (("market",) if settings.market_feed else ()) + ("node_hub",):
         try:
             m = __import__(f"app.{mod}", fromlist=["background"])
             if hasattr(m, "background"):
@@ -476,7 +476,7 @@ async def api_settings_set(request: Request):
 
 
 # ---------- модулі наступних етапів (ПК-вузол, ринок, гра) ----------
-for _mod in ("node_hub", "trading", "game"):
+for _mod in ("node_hub", "market", "trading", "game"):
     try:
         _m = __import__(f"app.{_mod}", fromlist=["router"])
         app.include_router(_m.router, dependencies=[] if _mod == "node_hub" else [Owner])

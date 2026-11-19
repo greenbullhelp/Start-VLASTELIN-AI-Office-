@@ -1,0 +1,29 @@
+# Налаштування вузла Джарвіса на ПК. Скопіюйте у config.toml (це робить install_windows.bat) і заповніть.
+
+# Адреса сервера в Tailscale (дивіться в застосунку Tailscale: IP сервера 100.x.y.z) і порт 8100
+server = "http://100.64.0.1:8100"
+# Токен вузла: на сервері виконайте  grep NODE_TOKEN /opt/jarvis/.env  і вставте значення
+token = "ВСТАВТЕ_NODE_TOKEN"
+# Назва ПК у панелі
+name = "home-pc"
+
+# Білий список: лише ці дії ПК виконає. Видаліть зайве, щоб заборонити.
+allowed_actions = ["ping", "comfy_generate", "sd_generate", "ffmpeg_cut", "ffmpeg_concat", "ffmpeg_transcode",
+                   "whisper_subtitles", "burn_subtitles", "transcribe"]
+
+# Робоча папка: сюди завантажуються вхідні файли й зберігаються результати
+work_dir = "C:/JarvisNode/work"
+
+# Графіка: comfy (ComfyUI) або sd (Stable Diffusion WebUI / Forge з прапорцем --api)
+image_backend = "comfy"
+comfy_url = "http://127.0.0.1:8188"
+sd_url = "http://127.0.0.1:7860"
+# Модель для ComfyUI (файл у ComfyUI/models/checkpoints). Для 8 ГБ VRAM: SDXL base або SD 1.5
+checkpoint = "sd_xl_base_1.0.safetensors"
+# Найбільша сторона зображення: 1216 для SDXL, 768 для SD 1.5 (менше — швидше й менше пам'яті)
+max_side = 1216
+
+# Субтитри: cuda (відеокарта NVIDIA) або cpu
+whisper_device = "cuda"
+# Шлях до ffmpeg.exe, якщо його немає в PATH
+# ffmpeg = "C:/ffmpeg/bin/ffmpeg.exe"

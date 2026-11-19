@@ -1,0 +1,64 @@
+# Джарвіс: Hermes Agent + приватна панель + HTTPS (Caddy).
+# Запуск: docker compose up -d --build   (усі ключі — у файлі .env поруч, див. .env.example)
+services:
+  hermes:
+    image: ${HERMES_IMAGE:-nousresearch/hermes-agent:stable}
+    container_name: jarvis-hermes
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    environment:
+      - HERMES_UID=10000
+      - HERMES_GID=10000
+      - TZ=${TZ:-Europe/Kyiv}
+      - API_SERVER_ENABLED=true
+      - API_SERVER_HOST=0.0.0.0          # доступний лише всередині мережі Docker (порт не публікується)
+      - API_SERVER_PORT=8642
+      - API_SERVER_KEY=${API_SERVER_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GH_TOKEN=${AGENT_GH_TOKEN:-}     # необов'язково: токен лише на репозиторій гри (гілки agent/*)
+    volumes:
+      - ./data/hermes:/opt/data
+    expose:
+      - "8642"
+    mem_limit: ${HERMES_MEM:-3g}
+
+  panel:
+    build:
+      context: ./panel
+      args:
+        WITH_WHISPER: ${WITH_WHISPER:-1}
+    container_name: jarvis-panel
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATA_DIR=/data
+      - HERMES_URL=http://hermes:8642
+    volumes:
+      - ./data/panel:/data
+      - ./data/hermes/workspace:/data/workspace   # спільна робоча папка з Hermes
+    ports:
+      # лише для ПК-вузла: адреса Tailscale сервера (або 127.0.0.1, якщо вузол не потрібен)
+      - "${TAILSCALE_IP:-127.0.0.1}:8100:8000"
+    depends_on:
+      - hermes
+    mem_limit: ${PANEL_MEM:-1g}
+
+  caddy:
+    image: caddy:2.10
+    container_name: jarvis-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - PANEL_DOMAIN=${PANEL_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - panel
+
+volumes:
+  caddy_data:
+  caddy_config:

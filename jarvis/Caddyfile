@@ -1,0 +1,14 @@
+# HTTPS для панелі: Caddy сам отримує й оновлює сертифікат Let's Encrypt для PANEL_DOMAIN.
+{$PANEL_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	# вузол ПК ходить лише через Tailscale (порт 8100), не через інтернет
+	@node path /node/*
+	respond @node 404
+	reverse_proxy panel:8000 {
+		flush_interval -1
+	}
+}

@@ -1,0 +1,54 @@
+# Конфігурація Hermes Agent для Джарвіса. Копіюється в data/hermes/config.yaml при встановленні.
+# Ключі тут НЕ зберігаються — лише в .env (передаються змінними середовища).
+model:
+  default: claude-sonnet-5-5      # середня модель за замовчуванням; панель вибирає модель для кожної задачі
+  provider: anthropic
+
+agent:
+  max_turns: 40                   # обмеження кроків інструментів на одну задачу (економія)
+
+terminal:
+  backend: local                  # команди виконуються всередині контейнера Hermes (ізольовано від сервера)
+  cwd: /opt/data/workspace
+  timeout: 180
+
+approvals:
+  mode: smart
+  deny:                           # жорсткі заборони — навіть якщо модель «попросить»
+    - "git push*main*"
+    - "git push*master*"
+    - "git push*--force*"
+    - "git push*-f *"
+    - "*rm -rf /*"
+    - "*printenv*"
+    - "env"
+    - "*cat*.env*"
+    - "*curl*|*sh*"
+    - "*wget*|*sh*"
+    - "*ufw*"
+    - "*iptables*"
+    - "*ssh-keygen*"
+    - "*authorized_keys*"
+
+# Допоміжні виклики Hermes (назви сесій, стиснення контексту, оцінка небезпечних команд) — на дешевій моделі
+auxiliary:
+  title_generation:
+    provider: anthropic
+    model: claude-haiku-5-5
+  compression:
+    provider: anthropic
+    model: claude-haiku-5-5
+  approval:
+    provider: anthropic
+    model: claude-haiku-5-5
+
+security:
+  redact_secrets: true
+
+display:
+  language: uk
+
+gateway:
+  api_server:
+    max_concurrent_runs: 4
+    direct_model_requests: true

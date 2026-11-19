@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07090d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="robots" content="noindex, nofollow">
+<title>Джарвіс</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon.svg">
+<link rel="stylesheet" href="/static/app.css?v=1">
+</head>
+<body class="v-chat">
+<div id="bg"></div>
+
+<!-- Вхід -->
+<section id="login" class="login" hidden>
+  <div class="card">
+    <div class="row"><span class="orb"></span><span class="muted">Приватна панель</span></div>
+    <h1>ДЖАРВІС</h1>
+    <form id="loginForm" class="stack" autocomplete="on">
+      <div><label class="f" for="pw">Пароль</label><input id="pw" type="password" autocomplete="current-password" required></div>
+      <div><label class="f" for="code">Код 2FA (6 цифр)</label><input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="при першому вході — порожньо"></div>
+      <div class="err" id="loginErr"></div>
+      <button class="btn primary" style="width:100%">Увійти</button>
+    </form>
+    <form id="enrollForm" class="stack" hidden>
+      <p class="muted">Підключіть двофакторний код. На iPhone натисніть кнопку нижче — код з'явиться в застосунку «Паролі». Або відскануйте QR в іншому застосунку-автентифікаторі.</p>
+      <div class="qr" id="qr"></div>
+      <a class="btn gold" id="otpLink" href="#" style="display:block;text-align:center;text-decoration:none">Додати в «Паролі» iPhone</a>
+      <div class="muted mono" id="secret" style="word-break:break-all;text-align:center"></div>
+      <div><label class="f" for="ecode">Код з застосунку</label><input id="ecode" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
+      <div class="err" id="enrollErr"></div>
+      <button class="btn primary" style="width:100%">Підтвердити й увійти</button>
+    </form>
+  </div>
+</section>
+
+<!-- Панель -->
+<div id="app" hidden>
+  <header class="topbar wood">
+    <div class="brand"><span class="orb" id="orb" title="Індикатор Джарвіса"></span><b>ДЖАРВІС</b><small>командний центр</small></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="status">
+      <span class="pill hide-m" id="pBrain" title="Hermes Agent"><span class="dot"></span>Hermes</span>
+      <span class="pill hide-m" id="pNode" title="ПК-вузол"><span class="dot"></span>ПК</span>
+      <span class="pill" id="pSpend" title="Витрати сьогодні / денний ліміт">$0.00</span>
+      <button class="btn-stop" id="stopBtn" title="Миттєво зупинити всіх агентів">СТОП</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="chat card" id="chat">
+      <div class="head">
+        <h3>Чат з Джарвісом</h3>
+        <select id="modelSel" title="Модель для наступного повідомлення" style="width:auto">
+          <option value="">Авто</option><option value="cheap">Дешева</option><option value="medium">Середня</option><option value="strong">Сильна</option>
+        </select>
+      </div>
+      <div class="msgs" id="msgs"></div>
+      <div class="recbar" id="recbar" hidden>
+        <canvas id="wave"></canvas><span class="live" id="liveText"></span>
+        <button class="btn sm danger" id="recCancel">Скасувати</button>
+      </div>
+      <form class="composer" id="composer">
+        <button type="button" class="icon-btn" id="micBtn" title="Голосове повідомлення" aria-label="Голос">🎤</button>
+        <textarea id="input" rows="1" placeholder="Напишіть задачу…" aria-label="Повідомлення"></textarea>
+        <button class="icon-btn send" title="Надіслати" aria-label="Надіслати">➤</button>
+      </form>
+    </aside>
+    <section class="view" id="view"></section>
+  </main>
+  <nav class="tabbar wood" id="tabbar"></nav>
+</div>
+<div id="toast"></div>
+<script src="/static/app.js?v=1" type="module"></script>
+</body>
+</html>
